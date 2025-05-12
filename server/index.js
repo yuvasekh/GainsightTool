@@ -2,7 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require('body-parser');
 const path = require("path");
-
+const multer = require("multer");
+const upload = multer();
 // Import routes
 const instanceRoutes = require('./routes/instanceRoutes');
 const objectRoutes = require('./routes/objectRoutes');
@@ -19,7 +20,7 @@ app.use(express.json({ limit: "150mb" })); // Increase limit for large files
 app.use(express.static("uploads"));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
-
+app.use(upload.any())
 // Simple health check route
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok', message: 'Server is running' });

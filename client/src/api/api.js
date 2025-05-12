@@ -61,10 +61,12 @@ export async function fetchFieldNames(objectName) {
       throw error; // Rethrow to handle it in the caller
     }
   }
-  export async function createMigration(sourceObject ,targetObject ,targetUrl ,accessKey ) {
+  export async function createMigration(formData) {
     try {
-      const response = await axios.post('http://localhost:5000/api/migrate', {
-        sourceObject ,targetObject ,targetUrl ,accessKey
+      const response = await axios.post('http://localhost:5000/api/migrations', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data', // Ensure the request is treated as multipart/form-data
+        },
       });
   
       // You can return whatever you get from backend

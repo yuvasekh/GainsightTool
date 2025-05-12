@@ -3,6 +3,6 @@ const router = express.Router()
 const migrationController = require("../controllers/migrationController")
 
 // POST /api/migrations - Migrate fields between objects
-router.post("/", migrationController.migrateFields)
+router.post("/", migrationController.CsvFieldsmigration)
 
 module.exports = router

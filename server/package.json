@@ -3,7 +3,11 @@
     "axios": "^1.9.0",
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
+    "csv-parse": "^5.6.0",
+    "csv-parser": "^3.2.0",
     "express": "^5.1.0",
-    "fs": "^0.0.1-security"
+    "fast-csv": "^5.0.2",
+    "fs": "^0.0.1-security",
+    "multer": "^1.4.5-lts.2"
   }
 }
