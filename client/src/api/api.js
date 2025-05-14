@@ -1,7 +1,8 @@
 import axios from 'axios';
-export async function fetchObjects() {
+export async function fetchObjects(instanceUrl, instanceToken) {
+  let instance={instanceToken:instanceToken,instanceUrl:instanceUrl}
   try {
-    const response = await axios.get('http://localhost:5000/api/objects'); 
+    const response = await axios.post('http://localhost:5000/api/objects/fetch',instance); 
     console.log(response,"response")
     return response.data;  // Assuming backend sends array like ['Object1', 'Object2']
   } catch (error) {
@@ -10,11 +11,16 @@ export async function fetchObjects() {
   }
 }
 
-// Fetch fields for a specific object
-export async function fetchFieldNames(objectName) {
+
+
+export async function fetchFieldNames(instanceUrl, instanceToken, sourceObjectSelection) {
   try {
-    const response = await axios.get(`http://localhost:5000/api/fields?objectName=${encodeURIComponent(objectName)}`);
-    return response.data;  // Assuming backend sends array like ['Field1', 'Field2']
+    const response = await axios.post('http://localhost:5000/api/fields', {
+      objectName: sourceObjectSelection,
+      instanceUrl,
+      instanceToken
+    });
+    return response.data;  // e.g., ['Field1', 'Field2']
   } catch (error) {
     console.error('Error fetching fields:', error);
     throw error;

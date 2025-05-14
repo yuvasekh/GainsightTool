@@ -185,9 +185,9 @@ async function getFields(instanceUrl,accesskey,objectName) {
       const config = {
         method: "get",
         maxBodyLength: Number.POSITIVE_INFINITY,
-        url: `${instanceUrl}/v1/meta/services/objects/${objectName}/describe?ic=true&idd=true`,
+        url: `${instanceUrl}/v1/meta/v10/gdm/objects/${objectName}/describe?ic=true&idd=true`,
         headers: {
-          AccessKey: accesskey,
+          Cookie: accesskey,
           "Content-Type": "application/json",
         },
       }
