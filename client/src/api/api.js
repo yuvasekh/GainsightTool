@@ -67,6 +67,17 @@ export async function fetchFieldNames(instanceUrl, instanceToken, sourceObjectSe
       throw error; // Rethrow to handle it in the caller
     }
   }
+  export async function fetchTimelineData( fieldName, displayName ) {
+    try {
+      const response = await axios.post('http://localhost:5000/api/timeline');
+  
+      // You can return whatever you get from backend
+      return response.data; 
+    } catch (error) {
+      console.error('Error adding instance:', error);
+      throw error; // Rethrow to handle it in the caller
+    }
+  }
   export async function createMigration(formData) {
     try {
       const response = await axios.post('http://localhost:5000/api/migrations', formData, {

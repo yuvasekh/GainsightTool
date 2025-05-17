@@ -10,7 +10,7 @@ const objectRoutes = require('./routes/objectRoutes');
 const fieldRoutes = require('./routes/fieldRoutes');
 const migrationRoutes = require('./routes/migrationRoutes');
 const messageRoutes = require('./routes/messageRoutes');
-
+const timelineRoutes = require('./routes/timelineRoutes');
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -32,7 +32,7 @@ app.use('/api/objects', objectRoutes);
 app.use('/api/fields', fieldRoutes);
 app.use('/api/migrations', migrationRoutes);
 app.use('/api/message', messageRoutes);
-
+app.use('/api/timeline', timelineRoutes);
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);

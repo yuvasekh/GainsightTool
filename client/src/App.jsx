@@ -9,7 +9,7 @@ import FieldsListing from './FieldsListing';
 import './App.css'
 // import React, { useState } from 'react';
 import axios from 'axios';
-import { FloatButton, Input, Spin } from 'antd';
+import { FloatButton, Input, Spin, Timeline } from 'antd';
 import { message } from './api/api';
 import Sidebar from './components/Sidebar';
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
@@ -132,6 +132,8 @@ import PageTitle from "./components/PageTitle"
 // import InstanceManager from "./InstanceManager"
 import "./App.css"
 import FieldConfiguration from './components/EditFields';
+import { ActivityFeed } from './components/ActivityFeed';
+import CompanyTimelinePage from './components/ActivityFeedByCompany';
 
 // Layout Component with Sidebar and Content
 const Layout = ({ children }) => {
@@ -228,6 +230,22 @@ const App = () => {
             element={
               <Layout>
                 <div>AI Recommendations Page</div>
+              </Layout>
+            }
+          />
+             <Route
+            path="/timeline"
+            element={
+              <Layout>
+             <ActivityFeed/>
+              </Layout>
+            }
+          />
+               <Route
+            path="/timeline/:companyId"
+            element={
+              <Layout>
+             <CompanyTimelinePage/>
               </Layout>
             }
           />

@@ -65,6 +65,10 @@ const menuItems = [
         label: "Push CTAs",
         path: "/push-ctas",
       },
+       {
+        label: "Timeline",
+        path: "/timeline",
+      },
       {
         label: "AI Recommendations",
         path: "/ai-recommendations",
