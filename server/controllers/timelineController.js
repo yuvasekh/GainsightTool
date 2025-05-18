@@ -38,3 +38,42 @@ exports.fetchTimeLine = async (req, res) => {
     });
   }
 };
+exports.CompanyTimeLine = async (req, res) => {
+  try {
+    const { instanceUrl, instanceToken, companyId, page = 0, size = 20 } = req.body;
+
+    if (!instanceUrl || !instanceToken || !companyId) {
+      return res.status(400).json({ message: "Missing instance information" });
+    }
+
+    const url = `${instanceUrl}/v1/ant/timeline/search/gsactivities?page=${page}&size=${size}&companyId=${companyId}`;
+
+    const payload = {
+      quickSearch: {},
+      contextFilter: {},
+      filterContext: "GLOBAL_TIMELINE",
+    };
+
+    const config = {
+      method: 'post',
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': instanceToken, // assuming token is a cookie string like "JSESSIONID=..."
+      },
+      data: JSON.stringify(payload),
+      maxBodyLength: Infinity,
+    };
+
+    const response = await axios(config);
+
+    // Optional: derive company name if needed here
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error fetching timeline:", error.message);
+    res.status(500).json({
+      message: "Error fetching timeline",
+      error: error.message,
+    });
+  }
+};

@@ -128,6 +128,9 @@ const FieldsMigration = () => {
   const [targetFieldsPage, setTargetFieldsPage] = useState(1)
   const [fieldsPerPage, setFieldsPerPage] = useState(20)
 
+  // State for active tab
+  const [activeTabKey, setActiveTabKey] = useState("1")
+
   // Fetch source objects when source credentials are provided
   const fetchSourceObjectsData = useCallback(async () => {
     if (sourceUrl && sourceToken) {
@@ -219,13 +222,16 @@ const FieldsMigration = () => {
       setIsLoadingDeleteFields(true)
       try {
         const fields = await fetchFieldNames(sourceUrl, sourceToken, deleteObjectSelection)
+        // Ensure each field has a unique id and selected property
         setDeleteFields(
-          fields.map((field) => ({
+          fields.map((field, index) => ({
             ...field,
+            id: field.id || index + 1,
             selected: false,
           })),
         )
         setSelectAll(false)
+        setSourceFieldsSearch("")
       } catch (error) {
         console.error("Error fetching fields for delete:", error)
         message.error(`Failed to fetch fields: ${error.message}`)
@@ -236,6 +242,10 @@ const FieldsMigration = () => {
   }, [sourceUrl, sourceToken, deleteObjectSelection])
 
   // Effect hooks for fetching data
+  useEffect(() => {
+    fetchSourceObjectsData()
+  }, [fetchSourceObjectsData])
+
   useEffect(() => {
     fetchSourceFieldsData()
   }, [fetchSourceFieldsData])
@@ -260,9 +270,36 @@ const FieldsMigration = () => {
     }
   }, [isMultiSelectMode])
 
+  // Reset form state when switching tabs
+  const handleTabChange = (key) => {
+    setActiveTabKey(key)
+
+    // Reset state based on the tab
+    if (key === "1") {
+      // Fields Adding tab
+      setFieldMappings([{ id: 1, sourceField: "", targetField: "" }])
+      setSelectedFieldsForMigration([])
+      setSourceObjectSelection(null)
+      setTargetObjectSelection(null)
+      setSameSourceSelection(null)
+      setSourceFieldsSearch("")
+      setTargetFieldsSearch("")
+    } else if (key === "2") {
+      // Rename Fields tab
+      setRenameFields([{ id: 1, currentName: "", newName: "", source: "" }])
+      setRenameSourceObjectSelection(null)
+      setSourceFieldsSearch("")
+    } else if (key === "3") {
+      // Deletion Fields tab
+      setDeleteFields([])
+      setSelectAll(false)
+      setDeleteObjectSelection(null)
+      setSourceFieldsSearch("")
+    }
+  }
+
   // Test connection
   const testConnection = async (type) => {
-    console.log("click")
     setConnectionType(type)
     setConnectionStatus(null)
 
@@ -324,10 +361,11 @@ const FieldsMigration = () => {
 
   // Handle source field selection for multi-select
   const handleSourceFieldSelection = (field) => {
-    if (selectedSourceFields.includes(field.id)) {
-      setSelectedSourceFields(selectedSourceFields.filter((id) => id !== field.id))
+    const fieldId = field.id
+    if (selectedSourceFields.includes(fieldId)) {
+      setSelectedSourceFields(selectedSourceFields.filter((id) => id !== fieldId))
     } else {
-      setSelectedSourceFields([...selectedSourceFields, field.id])
+      setSelectedSourceFields([...selectedSourceFields, fieldId])
     }
   }
 
@@ -370,14 +408,16 @@ const FieldsMigration = () => {
     }
 
     // Create mappings for selected fields
-    const newMappings = selectedSourceFields.map((fieldId, index) => {
-      const sourceField = sourceObjectFields.find((f) => f.id === fieldId)
-      return {
-        id: Date.now() + index,
-        sourceField: sourceField.name,
-        targetField: bulkMappingTarget,
-      }
-    })
+    const newMappings = selectedSourceFields
+      .map((fieldId, index) => {
+        const sourceField = sourceObjectFields.find((f) => f.id === fieldId)
+        return {
+          id: Date.now() + index,
+          sourceField: sourceField ? sourceField.name : "",
+          targetField: bulkMappingTarget,
+        }
+      })
+      .filter((mapping) => mapping.sourceField) // Filter out any mappings with empty source fields
 
     // Add to existing mappings
     setFieldMappings([...fieldMappings, ...newMappings])
@@ -434,14 +474,71 @@ const FieldsMigration = () => {
 
   // Toggle individual field selection
   const toggleFieldSelection = (id) => {
-    setDeleteFields(deleteFields.map((field) => (field.id === id ? { ...field, selected: !field.selected } : field)))
-
-    // Check if all are selected after this toggle
     const updatedFields = deleteFields.map((field) =>
       field.id === id ? { ...field, selected: !field.selected } : field,
     )
+
+    setDeleteFields(updatedFields)
+
+    // Check if all are selected after this toggle
     const allSelected = updatedFields.every((field) => field.selected)
     setSelectAll(allSelected)
+  }
+
+  // Log selected fields for migration
+  const logSelectedFieldsForMigration = () => {
+    console.log("=== Selected Fields for Migration ===")
+    const selectedFields = selectedFieldsForMigration
+      .map((fieldId) => {
+        const field = sourceObjectFields.find((f) => f.id === fieldId)
+        return field ? { id: field.id, name: field.name, type: field.type } : null
+      })
+      .filter(Boolean)
+
+    console.log({
+      sourceObject: sourceObjectSelection,
+      targetObject: targetObjectSelection,
+      selectedFields,
+      totalSelected: selectedFields.length,
+    })
+
+    return selectedFields
+  }
+
+  // Log fields for deletion
+  const logSelectedFieldsForDeletion = () => {
+    console.log("=== Selected Fields for Deletion ===")
+    const selectedFields = deleteFields
+      .filter((field) => field.selected)
+      .map((field) => ({ id: field.id, name: field.name, type: field.type }))
+
+    console.log({
+      sourceObject: deleteObjectSelection,
+      selectedFields,
+      totalSelected: selectedFields.length,
+    })
+
+    return selectedFields
+  }
+
+  // Log fields for renaming
+  const logSelectedFieldsForRename = () => {
+    console.log("=== Selected Fields for Rename ===")
+    const renamedFields = renameFields
+      .map((field) => ({
+        currentName: field.currentName,
+        newName: field.newName,
+        source: field.source || renameSourceObjectSelection,
+      }))
+      .filter((field) => field.currentName && field.newName)
+
+    console.log({
+      sourceObject: renameSourceObjectSelection,
+      renamedFields,
+      totalRenamed: renamedFields.length,
+    })
+
+    return renamedFields
   }
 
   // Apply field migration without mapping
@@ -456,18 +553,13 @@ const FieldsMigration = () => {
       return
     }
 
+    // Log the selected fields before migration
+    const fieldsToMigrate = logSelectedFieldsForMigration()
+
     setIsMigrating(true)
     setMigrationResult(null)
 
     try {
-      // Get the selected field names
-      const fieldsToMigrate = selectedFieldsForMigration
-        .map((fieldId) => {
-          const field = sourceObjectFields.find((f) => f.id === fieldId)
-          return field ? field.name : null
-        })
-        .filter(Boolean)
-
       // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 2000))
 
@@ -491,6 +583,148 @@ const FieldsMigration = () => {
     } finally {
       setIsMigrating(false)
     }
+  }
+
+  // Confirm and execute field deletion
+  const confirmDelete = () => {
+    const selectedCount = deleteFields.filter((field) => field.selected).length
+
+    if (selectedCount === 0) {
+      message.warning("Please select at least one field to delete")
+      return
+    }
+
+    // Log the selected fields before confirmation
+    const fieldsToDelete = logSelectedFieldsForDeletion()
+
+    confirm({
+      title: `Are you sure you want to delete ${selectedCount} field(s)?`,
+      icon: <ExclamationCircleOutlined />,
+      content: "This action cannot be undone.",
+      okText: "Yes, Delete",
+      okType: "danger",
+      cancelText: "Cancel",
+      onOk: async () => {
+        setIsDeleting(true)
+        setDeleteResult(null)
+
+        try {
+          // Simulate API call
+          await new Promise((resolve) => setTimeout(resolve, 1500))
+
+          const result = {
+            success: true,
+            message: `Successfully deleted ${fieldsToDelete.length} fields from ${deleteObjectSelection}`,
+          }
+
+          setDeleteResult(result)
+          message.success(result.message)
+
+          // Update the fields list
+          setDeleteFields(deleteFields.filter((field) => !field.selected))
+          setSelectAll(false)
+        } catch (error) {
+          console.error("Error deleting fields:", error)
+          message.error(`Failed to delete fields: ${error.message}`)
+        } finally {
+          setIsDeleting(false)
+        }
+      },
+    })
+  }
+
+  // Apply field renames
+  const applyFieldRenames = async () => {
+    if (!sourceUrl || !sourceToken || !renameSourceObjectSelection) {
+      message.error("Please provide all required information")
+      return
+    }
+
+    if (!renameFields.every((f) => f.currentName && f.newName)) {
+      message.error("Please complete all field renames")
+      return
+    }
+
+    // Log the rename fields before applying
+    const fieldsToRename = logSelectedFieldsForRename()
+
+    setIsRenaming(true)
+    setRenameResult(null)
+
+    try {
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+
+      const result = {
+        success: true,
+        message: `Successfully renamed ${fieldsToRename.length} fields in ${renameSourceObjectSelection}`,
+      }
+
+      setRenameResult(result)
+      message.success(result.message)
+    } catch (error) {
+      console.error("Error applying field renames:", error)
+      message.error(`Failed to apply field renames: ${error.message}`)
+    } finally {
+      setIsRenaming(false)
+    }
+  }
+
+  // Handle multi-select delete
+  const handleMultiSelectDelete = () => {
+    const selectedFieldIds = deleteFields.filter((field) => field.selected).map((field) => field.id)
+
+    if (selectedFieldIds.length === 0) {
+      message.warning("Please select at least one field to delete")
+      return
+    }
+
+    // Log the selected fields before deletion
+    const fieldsToDelete = logSelectedFieldsForDeletion()
+
+    confirm({
+      title: `Are you sure you want to delete ${selectedFieldIds.length} field(s)?`,
+      icon: <ExclamationCircleOutlined />,
+      content: "This action cannot be undone.",
+      okText: "Yes, Delete",
+      cancelText: "Cancel",
+      onOk: async () => {
+        setIsDeleting(true)
+
+        try {
+          // Simulate API call
+          await new Promise((resolve) => setTimeout(resolve, 1500))
+
+          // Remove selected fields from the list
+          setDeleteFields(deleteFields.filter((field) => !field.selected))
+          setSelectAll(false)
+
+          message.success(`Successfully deleted ${fieldsToDelete.length} fields`)
+        } catch (error) {
+          message.error(`Failed to delete fields: ${error.message}`)
+        } finally {
+          setIsDeleting(false)
+        }
+      },
+    })
+  }
+
+  // Add a form submission handler for the field selection section
+  const handleFieldSelectionSubmit = (e) => {
+    e.preventDefault()
+    applyFieldMigration()
+  }
+
+  // Add a form submission handler for the delete fields section
+  const handleDeleteFieldsSubmit = (e) => {
+    e.preventDefault()
+    confirmDelete()
+  }
+
+  // Add a form submission handler for the rename fields section
+  const handleRenameFieldsSubmit = (e) => {
+    e.preventDefault()
+    applyFieldRenames()
   }
 
   // Apply field mappings (original functionality)
@@ -534,91 +768,10 @@ const FieldsMigration = () => {
     }
   }
 
-  // Apply field renames
-  const applyFieldRenames = async () => {
-    if (!sourceUrl || !sourceToken || !renameSourceObjectSelection) {
-      message.error("Please provide all required information")
-      return
-    }
-
-    if (!renameFields.every((f) => f.currentName && f.newName)) {
-      message.error("Please complete all field renames")
-      return
-    }
-
-    setIsRenaming(true)
-    setRenameResult(null)
-
-    try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      const result = {
-        success: true,
-        message: `Successfully renamed ${renameFields.length} fields in ${renameSourceObjectSelection}`,
-      }
-
-      setRenameResult(result)
-      message.success(result.message)
-    } catch (error) {
-      console.error("Error applying field renames:", error)
-      message.error(`Failed to apply field renames: ${error.message}`)
-    } finally {
-      setIsRenaming(false)
-    }
-  }
-
-  // Confirm and execute field deletion
-  const confirmDelete = () => {
-    const selectedCount = deleteFields.filter((field) => field.selected).length
-
-    if (selectedCount === 0) {
-      message.warning("Please select at least one field to delete")
-      return
-    }
-
-    confirm({
-      title: `Are you sure you want to delete ${selectedCount} field(s)?`,
-      icon: <ExclamationCircleOutlined />,
-      content: "This action cannot be undone.",
-      okText: "Yes, Delete",
-      okType: "danger",
-      cancelText: "Cancel",
-      onOk: async () => {
-        setIsDeleting(true)
-        setDeleteResult(null)
-
-        try {
-          const fieldsToDelete = deleteFields.filter((field) => field.selected).map((field) => field.name)
-
-          // Simulate API call
-          await new Promise((resolve) => setTimeout(resolve, 1500))
-
-          const result = {
-            success: true,
-            message: `Successfully deleted ${fieldsToDelete.length} fields from ${deleteObjectSelection}`,
-          }
-
-          setDeleteResult(result)
-          message.success(result.message)
-
-          // Update the fields list
-          setDeleteFields(deleteFields.filter((field) => !field.selected))
-          setSelectAll(false)
-        } catch (error) {
-          console.error("Error deleting fields:", error)
-          message.error(`Failed to delete fields: ${error.message}`)
-        } finally {
-          setIsDeleting(false)
-        }
-      },
-    })
-  }
-
   // Filter source fields based on search
-  const filteredSourceFields = sourceObjectFields.filter((field) =>
-    field.name.toLowerCase().includes(sourceFieldsSearch.toLowerCase()),
-  )
+  const filteredSourceFields = deleteObjectSelection
+    ? deleteFields.filter((field) => field.name.toLowerCase().includes(sourceFieldsSearch.toLowerCase()))
+    : []
 
   // Filter target fields based on search
   const filteredTargetFields = targetObjectFields.filter((field) =>
@@ -650,6 +803,7 @@ const FieldsMigration = () => {
       title: "Field Name",
       dataIndex: "name",
       key: "name",
+      render: (name) => <span className="font-medium text-gray-800">{name}</span>,
     },
     {
       title: "Type",
@@ -1008,12 +1162,20 @@ const FieldsMigration = () => {
   // Simplified field selection section without mapping
   const renderFieldSelectionSection = () => {
     return (
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+      <form
+        onSubmit={handleFieldSelectionSubmit}
+        className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6"
+      >
         <div className="flex justify-between items-center mb-4">
           <Title level={5} className="m-0">
             <ThunderboltOutlined className="mr-2 text-blue-500" /> Field Selection
           </Title>
-          <Button type="primary" onClick={() => setShowFieldSelectionModal(true)} icon={<SearchOutlined />}>
+          <Button
+            type="primary"
+            onClick={() => setShowFieldSelectionModal(true)}
+            icon={<SearchOutlined />}
+            className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700"
+          >
             Select Fields to Migrate
           </Button>
         </div>
@@ -1022,7 +1184,7 @@ const FieldsMigration = () => {
           <div className="mt-4">
             <div className="flex justify-between items-center mb-2">
               <Text strong>Selected Fields ({selectedFieldsForMigration.length})</Text>
-              <Button size="small" danger onClick={() => setSelectedFieldsForMigration([])}>
+              <Button size="small" danger onClick={() => setSelectedFieldsForMigration([])} className="hover:bg-red-50">
                 Clear All
               </Button>
             </div>
@@ -1054,9 +1216,9 @@ const FieldsMigration = () => {
         <div className="mt-6 flex justify-end">
           <Button
             type="primary"
+            htmlType="submit"
             size="large"
             icon={<CloudSyncOutlined />}
-            onClick={applyFieldMigration}
             loading={isMigrating}
             disabled={
               !sourceUrl ||
@@ -1065,16 +1227,107 @@ const FieldsMigration = () => {
               !targetObjectSelection ||
               selectedFieldsForMigration.length === 0
             }
+            className="bg-gradient-to-r from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600 shadow-md"
           >
             Migrate Selected Fields
           </Button>
         </div>
+      </form>
+    )
+  }
+
+  // Render delete fields section with improved multi-select
+  const renderDeleteFieldsSection = () => {
+    const selectedCount = deleteFields.filter((field) => field.selected).length
+
+    return (
+      <div className="space-y-6">
+        <form onSubmit={handleDeleteFieldsSubmit} className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex justify-between items-center mb-4">
+            <Title level={5} className="m-0 flex items-center">
+              <DeleteOutlined className="mr-2 text-red-500" />
+              Field Selection for Deletion
+            </Title>
+            {selectedCount > 0 && (
+              <Badge count={selectedCount} className="animate-pulse" style={{ backgroundColor: "#ff4d4f" }} />
+            )}
+          </div>
+
+          <div className="mb-4">
+            <Input
+              placeholder="Search fields"
+              prefix={<SearchOutlined />}
+              value={sourceFieldsSearch}
+              onChange={(e) => {
+                setSourceFieldsSearch(e.target.value)
+                setSourceFieldsPage(1)
+              }}
+              allowClear
+              className="rounded-lg"
+            />
+          </div>
+
+          <div className="mb-4 flex justify-between items-center">
+            <Checkbox checked={selectAll} onChange={toggleSelectAll} className="text-gray-700 font-medium">
+              Select All Fields ({deleteFields.length})
+            </Checkbox>
+
+            {selectedCount > 0 && (
+              <Button
+                danger
+                type="primary"
+                size="small"
+                onClick={handleMultiSelectDelete}
+                icon={<DeleteOutlined />}
+                className="bg-red-500 hover:bg-red-600"
+              >
+                Delete Selected ({selectedCount})
+              </Button>
+            )}
+          </div>
+
+          <div className="border rounded-lg overflow-hidden">
+            <Table
+              rowKey="id"
+              columns={deleteColumnsConfig}
+              dataSource={filteredSourceFields}
+              pagination={{
+                current: sourceFieldsPage,
+                pageSize: fieldsPerPage,
+                total: filteredSourceFields.length,
+                onChange: setSourceFieldsPage,
+                showSizeChanger: false,
+              }}
+              size="middle"
+              rowClassName={(record) => (record.selected ? "bg-red-50" : "")}
+              loading={isLoadingDeleteFields}
+              className="hover-highlight-table"
+            />
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <Button
+              type="primary"
+              htmlType="submit"
+              danger
+              icon={<DeleteOutlined />}
+              loading={isDeleting}
+              disabled={
+                !sourceUrl || !sourceToken || deleteFields.length === 0 || !deleteFields.some((f) => f.selected)
+              }
+              size="large"
+              className="bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 shadow-md"
+            >
+              Delete Selected Fields
+            </Button>
+          </div>
+        </form>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen w-[79vw] flex items-center justify-center bg-gray-50 py-8">
+    <div className="min-h-screen w-[79vw] flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 py-8">
       <Card className="w-full max-w-6xl shadow-xl rounded-xl border border-gray-200 overflow-hidden">
         <div className="text-center mb-8">
           <Title level={2} className="mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
@@ -1085,11 +1338,19 @@ const FieldsMigration = () => {
           </Text>
         </div>
 
-        <Tabs defaultActiveKey="1" type="card" className="mb-4" tabBarStyle={{ marginBottom: 24 }} tabBarGutter={8}>
+        <Tabs
+          defaultActiveKey="1"
+          activeKey={activeTabKey}
+          onChange={handleTabChange}
+          type="card"
+          className="mb-4"
+          tabBarStyle={{ marginBottom: 24 }}
+          tabBarGutter={8}
+        >
           <TabPane
             tab={
-              <span className="px-1">
-                <PlusOutlined /> Fields Adding
+              <span className="px-1 py-1 flex items-center">
+                <PlusOutlined className="mr-1" /> Fields Adding
               </span>
             }
             key="1"
@@ -1142,6 +1403,10 @@ const FieldsMigration = () => {
                         size="large"
                         showSearch
                         optionFilterProp="children"
+                        filterOption={(input, option) =>
+                          option.children.props.children[0].props.children.toLowerCase().indexOf(input.toLowerCase()) >=
+                          0
+                        }
                         loading={isLoadingSourceObjects}
                         disabled={isLoadingSourceObjects || sourceObjects.length === 0}
                         value={sourceObjectSelection}
@@ -1189,6 +1454,10 @@ const FieldsMigration = () => {
                         size="large"
                         showSearch
                         optionFilterProp="children"
+                        filterOption={(input, option) =>
+                          option.children.props.children[0].props.children.toLowerCase().indexOf(input.toLowerCase()) >=
+                          0
+                        }
                         loading={isLoadingTargetObjects}
                         disabled={isLoadingTargetObjects || targetObjects.length === 0}
                         value={targetObjectSelection}
@@ -1253,6 +1522,10 @@ const FieldsMigration = () => {
                         size="large"
                         showSearch
                         optionFilterProp="children"
+                        filterOption={(input, option) =>
+                          option.children.props.children[0].props.children.toLowerCase().indexOf(input.toLowerCase()) >=
+                          0
+                        }
                         loading={isLoadingSourceObjects}
                         disabled={isLoadingSourceObjects || sourceObjects.length === 0}
                         value={sameSourceSelection}
@@ -1326,115 +1599,6 @@ const FieldsMigration = () => {
                   </div>
 
                   {sameSourceSelection && targetObjectSelection && renderFieldSelectionSection()}
-
-                  {/* <Divider>
-                    <Space>
-                      <FileTextOutlined />
-                      <span>Add New Fields</span>
-                    </Space>
-                  </Divider> */}
-
-                  {/* {fieldMappings.map((mapping, index) => (
-                    <div
-                      key={mapping.id}
-                      className="flex items-center gap-4 mb-4 bg-white p-4 rounded-lg shadow-sm border border-gray-200"
-                    >
-                      <div className="flex-1">
-                        <Input
-                          placeholder="New field name"
-                          value={mapping.sourceField}
-                          onChange={(e) => {
-                            const updatedMappings = [...fieldMappings]
-                            updatedMappings[index].sourceField = e.target.value
-                            setFieldMappings(updatedMappings)
-                          }}
-                          size="large"
-                        />
-                      </div>
-
-                      <div className="flex-1">
-                        <Select
-                          placeholder="Field type"
-                          className="w-full"
-                          value={mapping.targetField || undefined}
-                          onChange={(value) => {
-                            const updatedMappings = [...fieldMappings]
-                            updatedMappings[index].targetField = value
-                            setFieldMappings(updatedMappings)
-                          }}
-                          size="large"
-                        >
-                          <Option value="string">
-                            <Tag color={typeColors.string} style={{ borderRadius: "10px" }}>
-                              String
-                            </Tag>
-                          </Option>
-                          <Option value="number">
-                            <Tag color={typeColors.number} style={{ borderRadius: "10px" }}>
-                              Number
-                            </Tag>
-                          </Option>
-                          <Option value="boolean">
-                            <Tag color={typeColors.boolean} style={{ borderRadius: "10px" }}>
-                              Boolean
-                            </Tag>
-                          </Option>
-                          <Option value="date">
-                            <Tag color={typeColors.date} style={{ borderRadius: "10px" }}>
-                              Date
-                            </Tag>
-                          </Option>
-                          <Option value="object">
-                            <Tag color={typeColors.object} style={{ borderRadius: "10px" }}>
-                              Object
-                            </Tag>
-                          </Option>
-                          <Option value="array">
-                            <Tag color={typeColors.array} style={{ borderRadius: "10px" }}>
-                              Array
-                            </Tag>
-                          </Option>
-                        </Select>
-                      </div>
-
-                      {fieldMappings.length > 1 && (
-                        <Button
-                          type="text"
-                          icon={<DeleteOutlined />}
-                          onClick={() => removeFieldMapping(mapping.id)}
-                          className="text-red-500 hover:bg-red-50 rounded-full"
-                          size="large"
-                        />
-                      )}
-                    </div>
-                  ))} */}
-
-                  {/* <div className="flex justify-between">
-                    <Button
-                      type="dashed"
-                      icon={<PlusOutlined />}
-                      onClick={addSameSourceField}
-                      disabled={!sameSourceSelection}
-                      size="large"
-                      className="border-blue-400 text-blue-500 hover:border-blue-500 hover:text-blue-600"
-                    >
-                      Add New Field
-                    </Button>
-
-                    <Button
-                      type="primary"
-                      size="large"
-                      icon={<CloudSyncOutlined />}
-                      disabled={
-                        !sourceUrl ||
-                        !sourceToken ||
-                        !sameSourceSelection ||
-                        !fieldMappings.every((m) => m.sourceField && m.targetField)
-                      }
-                    >
-                      Add Fields
-                    </Button>
-                  </div> */}
                 </div>
               </TabPane>
 
@@ -1459,7 +1623,12 @@ const FieldsMigration = () => {
                       maxCount={1}
                       className="w-full"
                     >
-                      <Button icon={<UploadOutlined />} size="large" block>
+                      <Button
+                        icon={<UploadOutlined />}
+                        size="large"
+                        block
+                        className="bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border-blue-200"
+                      >
                         Click to Upload CSV
                       </Button>
                     </Upload>
@@ -1480,6 +1649,11 @@ const FieldsMigration = () => {
                           size="large"
                           showSearch
                           optionFilterProp="children"
+                          filterOption={(input, option) =>
+                            option.children.props.children[0].props.children
+                              .toLowerCase()
+                              .indexOf(input.toLowerCase()) >= 0
+                          }
                           loading={isLoadingTargetObjects}
                           disabled={isLoadingTargetObjects || targetObjects.length === 0}
                         >
@@ -1574,6 +1748,7 @@ const FieldsMigration = () => {
                             !targetObjectSelection ||
                             !csvMappings.every((m) => m.targetField)
                           }
+                          className="bg-gradient-to-r from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600 shadow-md"
                         >
                           Import Fields
                         </Button>
@@ -1610,6 +1785,9 @@ const FieldsMigration = () => {
                       size="large"
                       showSearch
                       optionFilterProp="children"
+                      filterOption={(input, option) =>
+                        option.children.props.children[0].props.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                      }
                       loading={isLoadingSourceObjects}
                       disabled={isLoadingSourceObjects || sourceObjects.length === 0}
                     >
@@ -1650,7 +1828,7 @@ const FieldsMigration = () => {
                   ) : renameSourceFields.length === 0 ? (
                     <Empty description="Select a source object to rename fields" />
                   ) : (
-                    <>
+                    <form onSubmit={handleRenameFieldsSubmit}>
                       <div className="mb-4">
                         <Input
                           placeholder="Search fields"
@@ -1660,13 +1838,14 @@ const FieldsMigration = () => {
                             setSourceFieldsSearch(e.target.value)
                             setSourceFieldsPage(1)
                           }}
+                          allowClear
                         />
                       </div>
 
                       {renameFields.map((field, index) => (
                         <div
                           key={field.id}
-                          className="flex items-center gap-4 mb-4 bg-white p-4 rounded-lg shadow-sm border border-gray-200"
+                          className="flex items-center gap-4 mb-4 bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:border-blue-300 transition-colors"
                         >
                           <div className="flex-1">
                             <Select
@@ -1757,18 +1936,19 @@ const FieldsMigration = () => {
 
                         <Button
                           type="primary"
+                          htmlType="submit"
                           size="large"
                           icon={<CloudSyncOutlined />}
-                          onClick={applyFieldRenames}
                           loading={isRenaming}
                           disabled={
                             !sourceUrl || !sourceToken || !renameFields.every((f) => f.currentName && f.newName)
                           }
+                          className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-md"
                         >
                           Apply Renames
                         </Button>
                       </div>
-                    </>
+                    </form>
                   )}
 
                   {renameResult && (
@@ -1797,7 +1977,12 @@ const FieldsMigration = () => {
                       onChange={handleCsvUpload}
                       maxCount={1}
                     >
-                      <Button icon={<UploadOutlined />} size="large" block>
+                      <Button
+                        icon={<UploadOutlined />}
+                        size="large"
+                        block
+                        className="bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border-blue-200"
+                      >
                         Click to Upload CSV
                       </Button>
                     </Upload>
@@ -1817,7 +2002,7 @@ const FieldsMigration = () => {
                   {csvRenameFields.map((field, index) => (
                     <div
                       key={field.id}
-                      className="grid grid-cols-3 gap-4 mb-4 bg-white p-4 rounded-lg shadow-sm border border-gray-200"
+                      className="grid grid-cols-3 gap-4 mb-4 bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:border-blue-300 transition-colors"
                     >
                       <Select
                         placeholder="Select source"
@@ -1896,6 +2081,7 @@ const FieldsMigration = () => {
                         !sourceToken ||
                         !csvRenameFields.every((f) => f.source && f.currentName && f.newName)
                       }
+                      className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-md"
                     >
                       Apply Renames
                     </Button>
@@ -1925,6 +2111,9 @@ const FieldsMigration = () => {
                   size="large"
                   showSearch
                   optionFilterProp="children"
+                  filterOption={(input, option) =>
+                    option.children.props.children[0].props.children.toLowerCase().indexOf(input.toLowerCase()) >= 0
+                  }
                   loading={isLoadingSourceObjects}
                   disabled={isLoadingSourceObjects || sourceObjects.length === 0}
                 >
@@ -1956,83 +2145,7 @@ const FieldsMigration = () => {
                   </div>
                 </div>
               ) : deleteFields.length > 0 ? (
-                <>
-                  <Divider>
-                    <Space>
-                      <DeleteOutlined />
-                      <span>Fields to Delete</span>
-                      <Badge count={deleteFields.filter((f) => f.selected).length} showZero />
-                    </Space>
-                  </Divider>
-
-                  <Alert
-                    message="Warning"
-                    description="Deleting fields may impact existing functionality. Make sure to check for dependencies before proceeding."
-                    type="warning"
-                    showIcon
-                    className="mb-4"
-                  />
-
-                  <div className="mb-4">
-                    <Input
-                      placeholder="Search fields"
-                      prefix={<SearchOutlined />}
-                      value={sourceFieldsSearch}
-                      onChange={(e) => {
-                        setSourceFieldsSearch(e.target.value)
-                        setSourceFieldsPage(1)
-                      }}
-                    />
-                  </div>
-
-                  <Table
-                    rowKey="id"
-                    columns={deleteColumnsConfig}
-                    dataSource={filteredSourceFields}
-                    pagination={{
-                      current: sourceFieldsPage,
-                      pageSize: fieldsPerPage,
-                      total: filteredSourceFields.length,
-                      onChange: setSourceFieldsPage,
-                      showSizeChanger: false,
-                    }}
-                    size="middle"
-                    className="border rounded-lg shadow-sm"
-                    rowClassName={(record) => (record.selected ? "bg-red-50" : "")}
-                    loading={isLoadingDeleteFields}
-                  />
-
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <Checkbox checked={selectAll} onChange={toggleSelectAll}>
-                        <Text strong>Select All Fields</Text>
-                      </Checkbox>
-                    </div>
-                    <Button
-                      type="primary"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={confirmDelete}
-                      loading={isDeleting}
-                      disabled={
-                        !sourceUrl || !sourceToken || deleteFields.length === 0 || !deleteFields.some((f) => f.selected)
-                      }
-                      size="large"
-                    >
-                      Delete Selected Fields
-                    </Button>
-                  </div>
-
-                  {deleteResult && (
-                    <Alert
-                      message="Delete Operation Successful"
-                      description={deleteResult.message}
-                      type="success"
-                      showIcon
-                      className="mt-6"
-                    />
-                  )}
-                </>
+                renderDeleteFieldsSection()
               ) : deleteObjectSelection ? (
                 <Empty description="No fields available for this object" />
               ) : (
@@ -2045,6 +2158,30 @@ const FieldsMigration = () => {
 
       {renderFieldSelectionModal()}
       {renderResultDrawer()}
+
+      <style jsx global>{`
+        .hover-highlight-table .ant-table-tbody > tr:hover {
+          background-color: rgba(59, 130, 246, 0.05);
+        }
+        
+        .ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active {
+          background-color: #f0f7ff;
+          border-color: #d1e9ff;
+        }
+        
+        .ant-tabs-card > .ant-tabs-nav .ant-tabs-tab {
+          border-radius: 6px 6px 0 0;
+        }
+        
+        .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+          background-color: #f0f7ff;
+        }
+        
+        .ant-checkbox-checked .ant-checkbox-inner {
+          background-color: #4f46e5;
+          border-color: #4f46e5;
+        }
+      `}</style>
     </div>
   )
 }

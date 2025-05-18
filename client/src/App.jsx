@@ -132,8 +132,9 @@ import PageTitle from "./components/PageTitle"
 // import InstanceManager from "./InstanceManager"
 import "./App.css"
 import FieldConfiguration from './components/EditFields';
-import { ActivityFeed } from './components/ActivityFeed';
+
 import CompanyTimelinePage from './components/ActivityFeedByCompany';
+import ActivityTimeline from './components/ActivityFeed';
 
 // Layout Component with Sidebar and Content
 const Layout = ({ children }) => {
@@ -141,10 +142,10 @@ const Layout = ({ children }) => {
     <div className="flex h-screen ">
       <AppSidebar />
       <div className="flex-1 ">
-        <div className="flex items-center h-12 border-b px-6">
+        {/* <div className="flex items-center h-12 border-b px-6">
           <SidebarTrigger className="mr-2" />
           <PageTitle />
-        </div>
+        </div> */}
         <div className="p-6 relative">
           {children}
           {/* <ChatBot /> */}
@@ -237,12 +238,12 @@ const App = () => {
             path="/timeline"
             element={
               <Layout>
-             <ActivityFeed/>
+             <ActivityTimeline/>
               </Layout>
             }
           />
                <Route
-            path="/timeline/:companyId"
+            path="/company/:companyId"
             element={
               <Layout>
              <CompanyTimelinePage/>

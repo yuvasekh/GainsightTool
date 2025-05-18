@@ -1,230 +1,298 @@
 "use client"
 
 import { useEffect, useState } from "react"
-// import { useParams } from "next/navigation"
-import { ArrowLeft, Download, FileText } from "lucide-react"
 
+import { ArrowLeft, Building, CalendarClock, MessageCircle, User, Edit, Check, Download, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { fetchCompanyTimeline, downloadAttachments } from "@/api/api"
-import { useNavigate,useParams } from "react-router-dom"
+import { Pagination, PaginationItem, PaginationPrevious, PaginationNext } from "@/components/ui/pagination"
+import { useNavigate, useParams } from "react-router-dom"
+import { fetchCompanyTimeline } from "@/api/api"
 
-export default function CompanyTimelinePage() {
-  const router = useNavigate()
-  const params = useParams()
-  const companyId = params.id 
-
-  const [companyData, setCompanyData] = useState(null)
+export default function CompanyTimeline() {
+ let value=useParams()
+ console.log(value)
+  const [companyName, setCompanyName] = useState("")
   const [activities, setActivities] = useState([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [currentPage, setCurrentPage] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [pageSize, setPageSize] = useState(20)
+  const router = useNavigate()
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true)
-      try {
-        const data = await fetchCompanyTimeline(companyId)
-        setActivities(data)
+useEffect(()=>
+{
+fetchCompanyTimelineData()
+},[])
 
-        // Extract company info from the first activity
-        if (data.length > 0) {
-          const companyContext = data[0].contexts.find((ctx) => ctx.id === companyId)
-          if (companyContext) {
-            setCompanyData({
-              id: companyId,
-              name: companyContext.lbl,
-              system: companyContext.esys,
-            })
-          }
-        }
-      } catch (err) {
-        console.error("Error fetching company timeline:", err)
-        setError("Failed to load company timeline data")
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    if (companyId) {
-      fetchData()
-    }
-  }, [companyId])
-
-  const handleDownloadAll = async () => {
+  const fetchCompanyTimelineData = async (page) => {
     try {
-      // In a real app, you would implement a way to download all attachments
-      // For now, we'll just show an alert
-      alert("Download functionality would be implemented here")
+      setLoading(true)
 
-      // Example of how you might download attachments for a specific activity
-      // if (activities.length > 0) {
-      //   await downloadAttachments(activities[0].id)
-      // }
+    
+
+   let responseData=await fetchCompanyTimeline("","",20,value?.companyId,0)
+console.log(responseData)
+      const { data } = responseData
+
+      setActivities(data.content)
+      setTotalPages(data.page.totalPages)
+      setLoading(false)
     } catch (err) {
-      console.error("Error downloading attachments:", err)
+      console.error("Error fetching company timeline:", err)
+      setError("Failed to load company timeline. Please try again later.")
+      setLoading(false)
     }
   }
 
-  return (
-    <div className="container mx-auto py-6 px-4 md:px-6">
-      <Button variant="ghost" className="mb-6" onClick={() => router.back()}>
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        Back to Dashboard
-      </Button>
+  const handlePageChange = (newPage) => {
+    if (newPage >= 0 && newPage < totalPages) {
+      setCurrentPage(newPage)
+    }
+  }
 
-      {isLoading ? (
-        <CompanyDetailSkeleton />
-      ) : error ? (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
-          <span className="block sm:inline">{error}</span>
+  const downloadAttachment = async (attachmentUrl, fileName) => {
+    try {
+      const response = await fetch(attachmentUrl)
+
+      if (!response.ok) {
+        throw new Error(`Failed to download attachment: ${response.statusText}`)
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.style.display = "none"
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error("Error downloading attachment:", error)
+      alert("Failed to download attachment. Please try again.")
+    }
+  }
+
+  const downloadAllAttachments = () => {
+    // Count total attachments
+    const totalAttachments = activities.reduce((count, activity) => {
+      return count + (activity.attachments?.length || 0)
+    }, 0)
+
+    if (totalAttachments === 0) {
+      alert("No attachments available to download.")
+      return
+    }
+
+    // For each activity with attachments, download them
+    activities.forEach((activity) => {
+      if (activity.attachments && activity.attachments.length > 0) {
+        activity.attachments.forEach((attachment) => {
+          // Use a timeout to prevent browser from blocking multiple downloads
+          setTimeout(() => {
+            downloadAttachment(attachment.url, attachment.name)
+          }, 500)
+        })
+      }
+    })
+  }
+
+  const formatDate = (timestamp) => {
+    return new Date(timestamp).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    })
+  }
+
+  const getActivityIcon = (type) => {
+    switch (type) {
+      case "MEETING":
+        return <CalendarClock className="h-5 w-5 text-blue-500" />
+      case "UPDATE":
+        return <MessageCircle className="h-5 w-5 text-green-500" />
+      case "MILESTONE":
+        return <FileText className="h-5 w-5 text-purple-500" />
+      default:
+        return <MessageCircle className="h-5 w-5 text-gray-500" />
+    }
+  }
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case "EDITED":
+        return (
+          <Badge variant="outline" className="ml-2 bg-amber-50 text-amber-700 border-amber-200">
+            <Edit className="h-3 w-3 mr-1" /> Edited
+          </Badge>
+        )
+      case "POSTED":
+        return (
+          <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200">
+            <Check className="h-3 w-3 mr-1" /> Posted
+          </Badge>
+        )
+      default:
+        return null
+    }
+  }
+
+  if (loading && currentPage === 0) {
+    return (
+      <main className="container mx-auto py-8 px-4">
+        <Button variant="ghost" className="mb-6 pl-0 flex items-center gap-2" onClick={() => router()}>
+          <ArrowLeft className="h-4 w-4" />
+          Back to Timeline
+        </Button>
+
+        <div className="space-y-4">
+          <Skeleton className="h-8 w-1/3" />
+          <Skeleton className="h-4 w-1/4" />
+          <div className="mt-8 space-y-4">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-24 w-full" />
+            ))}
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  if (error) {
+    return (
+      <main className="container mx-auto py-8 px-4">
+        <Button variant="ghost" className="mb-6 pl-0 flex items-center gap-2" onClick={() => router()}>
+          <ArrowLeft className="h-4 w-4" />
+          Back to Timeline
+        </Button>
+
+        <div className="p-6 text-center">
+          <p className="text-red-500 mb-4">{error}</p>
+          <Button onClick={() => fetchCompanyTimeline(currentPage)}>Try Again</Button>
+        </div>
+      </main>
+    )
+  }
+
+  const hasAttachments = activities.some((activity) => activity.attachments && activity.attachments.length > 0)
+
+  return (
+    <main className="container mx-auto py-8 px-4">
+      <div className="flex justify-between items-center mb-6">
+        <Button variant="ghost" className="pl-0 flex items-center gap-2" onClick={() => router()}>
+          <ArrowLeft className="h-4 w-4" />
+          Back to Timeline
+        </Button>
+
+        {hasAttachments && (
+          <Button variant="outline" className="flex items-center gap-2" onClick={downloadAllAttachments}>
+            <Download className="h-4 w-4" />
+            Download All Attachments
+          </Button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3 mb-6">
+        <Building className="h-6 w-6 text-primary" />
+        <h1 className="text-2xl font-bold">{companyName} Timeline</h1>
+      </div>
+
+      {loading ? (
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-24 w-full" />
+          ))}
+        </div>
+      ) : activities.length === 0 ? (
+        <div className="p-12 text-center border rounded-lg bg-slate-50">
+          <p className="text-muted-foreground">No activities found for this company.</p>
         </div>
       ) : (
         <>
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-            <div>
-              <h1 className="text-3xl font-bold">{companyData?.name || "Company Timeline"}</h1>
-              <p className="text-muted-foreground">{companyData?.system || "Timeline data"}</p>
-            </div>
-            <Button onClick={handleDownloadAll}>
-              <Download className="mr-2 h-4 w-4" />
-              Download All Attachments
-            </Button>
+          <div className="space-y-4">
+            {activities.map((activity) => (
+              <Card key={activity.id} className="p-4 hover:shadow-md transition-shadow">
+                <div className="flex items-start gap-4">
+                  <div className="mt-1">{getActivityIcon(activity.note.type)}</div>
+                  <div className="flex-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2">
+                      <div className="flex items-center">
+                        <h3 className="font-medium">{activity.note.subject}</h3>
+                        {getStatusBadge(activity.status)}
+                      </div>
+                      <span className="text-sm text-muted-foreground">{formatDate(activity.note.activityDate)}</span>
+                    </div>
+
+                    <p className="text-sm mb-3">{activity.note.plainText}</p>
+
+                    {activity.attachments && activity.attachments.length > 0 && (
+                      <div className="mb-3 p-2 bg-slate-50 rounded-md">
+                        <p className="text-sm font-medium mb-2">Attachments:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {activity.attachments.map((attachment, index) => (
+                            <Button
+                              key={index}
+                              variant="outline"
+                              size="sm"
+                              className="flex items-center gap-1 text-xs"
+                              onClick={() => downloadAttachment(attachment.url, attachment.name)}
+                            >
+                              <FileText className="h-3 w-3" />
+                              {attachment.name}
+                              <Download className="h-3 w-3 ml-1" />
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center text-sm text-muted-foreground">
+                      <User className="h-3.5 w-3.5 mr-1" />
+                      <span>{activity.author.name}</span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <Card>
-              <CardHeader>
-                <CardTitle>Activities</CardTitle>
-                <CardDescription>Total activities for this company</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-4xl font-bold">{activities.length}</p>
-              </CardContent>
-            </Card>
+          {totalPages > 1 && (
+            <Pagination className="mt-6">
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  className={currentPage === 0 ? "pointer-events-none opacity-50" : ""}
+                />
+              </PaginationItem>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Latest Update</CardTitle>
-                <CardDescription>Most recent activity</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {activities.length > 0 ? (
-                  <p className="font-medium">{activities[0].note.subject}</p>
-                ) : (
-                  <p className="text-muted-foreground">No activities found</p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Attachments</CardTitle>
-                <CardDescription>Files related to this company</CardDescription>
-              </CardHeader>
-              <CardContent className="flex items-center">
-                <FileText className="h-5 w-5 mr-2 text-muted-foreground" />
-                <p>0 attachments available</p>
-              </CardContent>
-              <CardFooter>
-                <Button variant="outline" size="sm" className="w-full" onClick={handleDownloadAll}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download All
-                </Button>
-              </CardFooter>
-            </Card>
-          </div>
-
-          <h2 className="text-2xl font-bold mb-4">Company Timeline</h2>
-          {activities.length === 0 ? (
-            <div className="text-center py-10 text-muted-foreground">No activities found for this company.</div>
-          ) : (
-            <div className="space-y-4">
-              {activities.map((activity) => (
-                <ActivityCard key={activity.id} activity={activity} />
+              {Array.from({ length: totalPages }).map((_, index) => (
+                <PaginationItem key={index}>
+                  <Button
+                    variant={currentPage === index ? "default" : "outline"}
+                    size="icon"
+                    onClick={() => handlePageChange(index)}
+                    className="w-9 h-9"
+                  >
+                    {index + 1}
+                  </Button>
+                </PaginationItem>
               ))}
-            </div>
+
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  className={currentPage === totalPages - 1 ? "pointer-events-none opacity-50" : ""}
+                />
+              </PaginationItem>
+            </Pagination>
           )}
         </>
       )}
-    </div>
-  )
-}
-
-function ActivityCard({ activity }) {
-  // This is a simplified version of the card from the ActivityFeed component
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex justify-between">
-          <CardTitle>{activity.note.subject}</CardTitle>
-          <p className="text-sm text-muted-foreground">{new Date(activity.note.activityDate).toLocaleDateString()}</p>
-        </div>
-        <CardDescription>By {activity.author.name}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <p>{activity.note.plainText}</p>
-      </CardContent>
-      <CardFooter className="flex justify-between">
-        <p className="text-sm text-muted-foreground">Status: {activity.status}</p>
-        {activity.attachments && activity.attachments.length > 0 ? (
-          <Button size="sm" variant="outline" onClick={() => downloadAttachments(activity.id)}>
-            <Download className="mr-2 h-4 w-4" />
-            Download Attachments ({activity.attachments.length})
-          </Button>
-        ) : (
-          <p className="text-sm text-muted-foreground">No attachments</p>
-        )}
-      </CardFooter>
-    </Card>
-  )
-}
-
-function CompanyDetailSkeleton() {
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <Skeleton className="h-10 w-64 mb-2" />
-          <Skeleton className="h-4 w-40" />
-        </div>
-        <Skeleton className="h-10 w-48" />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[1, 2, 3].map((i) => (
-          <Card key={i}>
-            <CardHeader>
-              <Skeleton className="h-6 w-32 mb-2" />
-              <Skeleton className="h-4 w-48" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-8 w-16" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <Skeleton className="h-8 w-48 mb-4" />
-
-      {[1, 2, 3].map((i) => (
-        <Card key={i} className="mb-4">
-          <CardHeader>
-            <div className="flex justify-between">
-              <Skeleton className="h-6 w-48" />
-              <Skeleton className="h-4 w-24" />
-            </div>
-            <Skeleton className="h-4 w-32 mt-2" />
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-4 w-full mb-2" />
-            <Skeleton className="h-4 w-3/4" />
-          </CardContent>
-          <CardFooter>
-            <Skeleton className="h-8 w-40" />
-          </CardFooter>
-        </Card>
-      ))}
-    </div>
+    </main>
   )
 }
