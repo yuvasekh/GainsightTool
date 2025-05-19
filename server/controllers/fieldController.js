@@ -24,18 +24,18 @@ exports.listFields = async (req, res) => {
     };
 
     const response = await axios.request(config);
-// console.log(response.data?.data?.columns)
+    // console.log(response.data?.data?.columns)
     const fields = response.data?.data?.columns;
     if (!fields || !Array.isArray(fields)) {
       return res.status(500).json({ message: "Invalid response format: 'fields' not found" });
     }
 
     // const fieldNames = fields.map(field => field.name);
-const simplifiedFields = fields.map((item, index) => ({
-  id: item.name,
-   name: item.name,
-  label: item.label
-}));
+    const simplifiedFields = fields.map((item, index) => ({
+      id: item.name,
+      name: item.name,
+      label: item.label
+    }));
     res.json(simplifiedFields);
 
   } catch (error) {
@@ -121,32 +121,37 @@ exports.addField = async (req, res) => {
   }
 }
 
-// Helper function to fetch fields for an object
-exports.fetchFields = async (objectName) => {
+exports.fetchFields = async (data) => {
   try {
-    const instances = await readDataFile(instancesFilePath)
+    // console.log(data)
+    const { sourceObject, sourceUrl, sourceToken } = data
 
-    if (!instances || instances.length === 0) {
-      throw new Error("No instances found")
+    if (!sourceObject || !sourceUrl || !sourceToken) {
+      return ({ message: "objectName, sourceUrl, and instanceToken are required" });
     }
-
-    // Use the first instance for now
-    const instance = instances[0]
 
     const config = {
       method: "get",
-      maxBodyLength: Number.POSITIVE_INFINITY,
-      url: `${instance.instanceUrl}/v1/meta/services/objects/${objectName}/describe?ic=true&idd=true`,
+      url: `${sourceUrl}/v1/meta/v10/gdm/objects/${sourceObject}`,
       headers: {
-        AccessKey: instance.accesskey,
+        Cookie: sourceToken,
         "Content-Type": "application/json",
       },
+    };
+// console.log(config)
+    const response = await axios.request(config);
+    console.log(response.data)
+    const fields = response.data?.data?.columns;
+    const group= response.data?.data?.group
+    if (!fields || !Array.isArray(fields)) {
+      return ({ message: "Invalid response format: 'fields' not found" });
     }
 
-    const response = await axios.request(config)
-    return response.data
+
+    return {fields:fields,group:group}
+
   } catch (error) {
-    console.error("Error fetching fields:", error)
-    throw error
+    console.error("Error listing fields:", error.message);
+    return error
   }
-}
+};

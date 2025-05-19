@@ -43,7 +43,7 @@ import {
   SearchOutlined,
   EyeOutlined,
 } from "@ant-design/icons"
-import { fetchObjects, fetchFieldNames } from "./api/api"
+import { fetchObjects, fetchFieldNames, createMigration } from "./api/api"
 import { Pagination } from "@/components/ui/pagination"
 
 const { TabPane } = Tabs
@@ -500,9 +500,17 @@ const FieldsMigration = () => {
       targetObject: targetObjectSelection,
       selectedFields,
       totalSelected: selectedFields.length,
+      
     })
 
-    return selectedFields
+
+    return {
+      sourceObject: sourceObjectSelection,
+      targetObject: targetObjectSelection,
+      selectedFields,
+      totalSelected: selectedFields.length,
+      
+    }
   }
 
   // Log fields for deletion
@@ -554,12 +562,18 @@ const FieldsMigration = () => {
     }
 
     // Log the selected fields before migration
-    const fieldsToMigrate = logSelectedFieldsForMigration()
-
+const fieldsToMigrate = {
+    ...logSelectedFieldsForMigration(),
+    ...(sourceUrl && sourceToken && targetUrl && targetToken
+        ? { sourceUrl, sourceToken, targetUrl, targetToken }
+        : {}),
+};
     setIsMigrating(true)
     setMigrationResult(null)
 
     try {
+      console.log(fieldsToMigrate)
+      await createMigration(fieldsToMigrate)
       // Simulate API call
       await new Promise((resolve) => setTimeout(resolve, 2000))
 

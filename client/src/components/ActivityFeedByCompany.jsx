@@ -2,7 +2,18 @@
 
 import { useEffect, useState } from "react"
 
-import { ArrowLeft, Building, CalendarClock, MessageCircle, User, Edit, Check, Download, FileText } from "lucide-react"
+import {
+  ArrowLeft,
+  Building,
+  CalendarClock,
+  MessageCircle,
+  User,
+  Edit,
+  Check,
+  Download,
+  FileText,
+  Eye,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -10,10 +21,11 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Pagination, PaginationItem, PaginationPrevious, PaginationNext } from "@/components/ui/pagination"
 import { useNavigate, useParams } from "react-router-dom"
 import { fetchCompanyTimeline } from "@/api/api"
+import ActivityAttachmentsModal from "@/components/activity-attachments-modal"
 
 export default function CompanyTimeline() {
- let value=useParams()
- console.log(value)
+  const value = useParams()
+  console.log(value)
   const [companyName, setCompanyName] = useState("")
   const [activities, setActivities] = useState([])
   const [loading, setLoading] = useState(true)
@@ -23,19 +35,20 @@ export default function CompanyTimeline() {
   const [pageSize, setPageSize] = useState(20)
   const router = useNavigate()
 
-useEffect(()=>
-{
-fetchCompanyTimelineData()
-},[])
+  // State for the attachments modal
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedActivity, setSelectedActivity] = useState(null)
+
+  useEffect(() => {
+    fetchCompanyTimelineData()
+  }, [])
 
   const fetchCompanyTimelineData = async (page) => {
     try {
       setLoading(true)
 
-    
-
-   let responseData=await fetchCompanyTimeline("","",20,value?.companyId,0)
-console.log(responseData)
+      const responseData = await fetchCompanyTimeline("", "", 20, value?.companyId, 0)
+      console.log(responseData)
       const { data } = responseData
 
       setActivities(data.content)
@@ -100,6 +113,15 @@ console.log(responseData)
         })
       }
     })
+  }
+
+  const openAttachmentsModal = (activity) => {
+    setSelectedActivity(activity)
+    setIsModalOpen(true)
+  }
+
+  const closeAttachmentsModal = () => {
+    setIsModalOpen(false)
   }
 
   const formatDate = (timestamp) => {
@@ -232,21 +254,30 @@ console.log(responseData)
 
                     {activity.attachments && activity.attachments.length > 0 && (
                       <div className="mb-3 p-2 bg-slate-50 rounded-md">
-                        <p className="text-sm font-medium mb-2">Attachments:</p>
+                        <div className="flex justify-between items-center mb-2">
+                          <p className="text-sm font-medium">Attachments ({activity.attachments.length})</p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => openAttachmentsModal(activity)}
+                          >
+                            <Eye className="h-3 w-3 mr-1" />
+                            View All
+                          </Button>
+                        </div>
                         <div className="flex flex-wrap gap-2">
-                          {activity.attachments.map((attachment, index) => (
-                            <Button
-                              key={index}
-                              variant="outline"
-                              size="sm"
-                              className="flex items-center gap-1 text-xs"
-                              onClick={() => downloadAttachment(attachment.url, attachment.name)}
-                            >
-                              <FileText className="h-3 w-3" />
-                              {attachment.name}
-                              <Download className="h-3 w-3 ml-1" />
-                            </Button>
+                          {activity.attachments.slice(0, 3).map((attachment, index) => (
+                            <div key={index} className="flex items-center text-xs text-muted-foreground">
+                              <FileText className="h-3 w-3 mr-1" />
+                              <span className="truncate max-w-[150px]">{attachment.name}</span>
+                            </div>
                           ))}
+                          {activity.attachments.length > 3 && (
+                            <span className="text-xs text-muted-foreground">
+                              +{activity.attachments.length - 3} more
+                            </span>
+                          )}
                         </div>
                       </div>
                     )}
@@ -293,6 +324,14 @@ console.log(responseData)
           )}
         </>
       )}
+
+      {/* Attachments Modal */}
+      <ActivityAttachmentsModal
+        isOpen={isModalOpen}
+        onClose={closeAttachmentsModal}
+        activity={selectedActivity}
+        attachments={selectedActivity?.attachments || []}
+      />
     </main>
   )
 }

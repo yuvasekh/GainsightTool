@@ -139,7 +139,7 @@ import ActivityTimeline from './components/ActivityFeed';
 // Layout Component with Sidebar and Content
 const Layout = ({ children }) => {
   return (
-    <div className="flex h-screen ">
+    <div className="flex h-screen w-screen ">
       <AppSidebar />
       <div className="flex-1 ">
         {/* <div className="flex items-center h-12 border-b px-6">

@@ -6,55 +6,116 @@ const csv = require("csv-parser");
 const { parse } = require('csv-parse');
 // const csv = require("csv-parser")
 // Migrate fields between objects
+// exports.migrateFields = async (req, res) => {
+//   try {
+//     const { targetUrl, accessKey: targetAccessKey, targetObject, sourceObject } = req.body
+
+//     // Basic validation
+//     if (!targetUrl || !targetAccessKey || !targetObject || !sourceObject) {
+//       return res.status(400).json({
+//         error: "Missing required fields in request body.",
+//       })
+//     }
+
+//     // Fetch fields from source object
+//     const fields = await fieldController.fetchFields(sourceObject)
+//     const fieldList = fields?.data?.[0]?.fields || []
+//     const objectType = fields?.data?.[0]?.objectType || "Unknown"
+
+//     const formattedFields = []
+
+//     // Format fields for migration
+//     fieldList.forEach((item) => {
+//       if (item.meta?.fieldGroupType !== "SYSTEM") {
+//         formattedFields.push({
+//           name: item.fieldName,
+//           label: item.label,
+//           defaultValue: item.defaultValue || null,
+//           description: item.description || null,
+//           type: item.dataType,
+//           group: objectType,
+//           hidden: false,
+//           required: item.meta?.dataType || false,
+//         })
+//       }
+//     })
+
+//     // Add fields to target object
+//     const response = await addFieldsToObject(targetUrl, targetAccessKey, targetObject, formattedFields)
+
+//     res.json(response)
+//   } catch (error) {
+//     console.error("Migration failed:", error)
+//     res.status(500).json({
+//       error: "Migration failed",
+//       details: error.message,
+//     })
+//   }
+// }
 exports.migrateFields = async (req, res) => {
   try {
-    const { targetUrl, accessKey: targetAccessKey, targetObject, sourceObject } = req.body
-
-    // Basic validation
-    if (!targetUrl || !targetAccessKey || !targetObject || !sourceObject) {
+    const {
+      targetUrl,
+     targetToken,
+      targetObject,
+      sourceObject,
+      selectedFields = [],
+    } = req.body;
+// console.log(req.body,"yuva")
+    if (!targetUrl || !targetToken || !targetObject || !sourceObject) {
       return res.status(400).json({
         error: "Missing required fields in request body.",
-      })
+      });
     }
 
-    // Fetch fields from source object
-    const fields = await fieldController.fetchFields(sourceObject)
-    const fieldList = fields?.data?.[0]?.fields || []
-    const objectType = fields?.data?.[0]?.objectType || "Unknown"
+    // Fetch all fields from the source object
+    const responseFields = await fieldController.fetchFields(req.body);
+    console.log(responseFields,"fields")
+    const fieldList = responseFields?.fields
+    const objectType =responseFields?.group
 
-    const formattedFields = []
+    // Build a Set of selected field names (from sourceObject)
+    const selectedFieldNames = new Set(selectedFields.map(f => f.name));
+console.log(selectedFieldNames,"selectedFieldNames")
+console.log(fieldList,"fieldList")
+    // Filter and format only selected fields from the fetched list
+    const formattedFields = fieldList
+      .filter(field => selectedFieldNames.has(field.name))
+      .filter(field => field.group !== "SYSTEM") // Exclude system fields
+      .map(field => ({
+        name: field.name,
+        label: field.label,
+        defaultValue: field.defaultValue || null,
+        description: field.description || null,
+        type: field.type,
+        group: objectType,
+        hidden: field.hidden,
+        required: field.required || false,
+      }));
+console.log(formattedFields,"king")
+    if (formattedFields.length === 0) {
+      return res.status(400).json({
+        error: "No valid selected fields found in source object.",
+      });
+    }
 
-    // Format fields for migration
-    fieldList.forEach((item) => {
-      if (item.meta?.fieldGroupType !== "SYSTEM") {
-        formattedFields.push({
-          name: item.fieldName,
-          label: item.label,
-          defaultValue: item.defaultValue || null,
-          description: item.description || null,
-          type: item.dataType,
-          group: objectType,
-          hidden: false,
-          required: item.meta?.dataType || false,
-        })
-      }
-    })
+    // Add selected fields to the target object
+    const response = await addFieldsToObject(
+      targetUrl,
+      targetToken,
+      targetObject,
+      formattedFields
+    );
 
-    // Add fields to target object
-    const response = await addFieldsToObject(targetUrl, targetAccessKey, targetObject, formattedFields)
-
-    res.json(response)
+    res.json(response);
   } catch (error) {
-    console.error("Migration failed:", error)
+    console.error("Migration failed:", error);
     res.status(500).json({
       error: "Migration failed",
       details: error.message,
-    })
+    });
   }
-}
-// const { parse } = require('fast-csv'); // Or any other CSV parsing library
-
-// // const { parse } = require('csv-parse'); // Make sure csv-parse is installed
+};
 
 exports.CsvFieldsmigration = async (req, res) => {
   try {
@@ -142,7 +203,7 @@ async function addFieldsToObject(targetUrl, targetAccessKey, objectName, columnN
       targetUrl = "https://demo-wigmore.gainsightcloud.com"
     }
 
-    const token = await readToken()
+ 
 
     const data = JSON.stringify({
       objectDetails: {
@@ -161,13 +222,13 @@ async function addFieldsToObject(targetUrl, targetAccessKey, objectName, columnN
       updatedColumns: [],
       deletedColumns: [],
     })
-
+console.log(data,"yuva999")
     const config = {
       method: "put",
       maxBodyLength: Number.POSITIVE_INFINITY,
       url: `${targetUrl}/v1/meta/v10/gdm/objects`,
       headers: {
-        Cookie: `${token}`,
+        Cookie: `${targetAccessKey}`,
         "Content-Type": "application/json",
       },
       data: data,
@@ -177,7 +238,7 @@ async function addFieldsToObject(targetUrl, targetAccessKey, objectName, columnN
     return response.data
   } catch (error) {
     console.error("Error adding fields to object:", error)
-    throw error
+    throw error.message
   }
 }
 async function getFields(instanceUrl,accesskey,objectName) {
