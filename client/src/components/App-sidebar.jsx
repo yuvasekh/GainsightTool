@@ -2,263 +2,162 @@
 
 import * as React from "react"
 import { Link, useLocation } from "react-router-dom"
-import { ChevronDown, Database, Server, LayoutDashboard, UserIcon, BellIcon, Search, X, Settings, Shield, Users, BarChart3, Cloud, Code, LogOut } from 'lucide-react'
+import { BarChart3, Cloud, Code, LogOut, Search, Settings, Sparkles, UserIcon, X } from 'lucide-react'
 
-import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarSeparator
+  SidebarMenuItem
 } from "@/components/ui/sidebar"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
-} from "@/components/ui/dropdown-menu"
 
-// Define menu items structure for searchability
 const menuItems = [
   {
-    group: "Overview",
-    icon: <LayoutDashboard className="h-4 w-4 text-emerald-500" />,
-    items: [
-      {
-        label: "Dashboard",
-        path: "/",
-        icon: <BarChart3 className="h-4 w-4" />,
-      },
-      {
-        label: "Analytics",
-        path: "/analytics",
-        icon: <BarChart3 className="h-4 w-4" />,
-        badge: "New"
-      },
-    ],
+    label: "Fields Migration Management",
+    path: "/",
+    icon: <BarChart3 className="h-4 w-4" />,
   },
   {
-    group: "Administration",
-    icon: <Server className="h-4 w-4 text-emerald-500" />,
-    items: [
-      {
-        label: "Data Management",
-        path: "/objects",
-        icon: <Database className="h-4 w-4" />,
-      },
-      {
-        label: "User Management",
-        path: "/users",
-        icon: <Users className="h-4 w-4" />,
-      },
-      {
-        label: "Security",
-        path: "/security",
-        icon: <Shield className="h-4 w-4" />,
-      },
-    ],
+    label: "Timeline",
+    path: "/timeline",
+    icon: <Code className="h-4 w-4" />,
   },
-  {
-    group: "Migration & AI",
-    icon: <Cloud className="h-4 w-4 text-emerald-500" />,
-    items: [
-      {
-        label: "Push CTAs",
-        path: "/push-ctas",
-        icon: <BellIcon className="h-4 w-4" />,
-      },
-      {
-        label: "Timeline",
-        path: "/timeline",
-        icon: <Code className="h-4 w-4" />,
-      },
-      {
-        label: "Reports",
-        path: "/reports",
-        icon: <BarChart3 className="h-4 w-4" />,
-        badge: "3"
-      },
-    ],
+    {
+    label: "Timelinemigration",
+    path: "/timelinemigration",
+    icon: <Code className="h-4 w-4" />,
   },
-];
+]
 
 const AppSidebar = () => {
   const [searchQuery, setSearchQuery] = React.useState("")
   const location = useLocation()
 
-  // Check if the current path matches the link
-  const isActive = (path) => {
-    return location.pathname === path
-  }
+  const isActive = (path) => location.pathname === path
 
-  // Filter menu items based on search query
-  const filteredMenuItems = React.useMemo(() => {
-    if (!searchQuery.trim()) {
-      return menuItems
-    }
+  const filteredItems = menuItems.filter(item =>
+    item.label.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
-    const query = searchQuery.toLowerCase()
-
-    return menuItems
-      .map((group) => {
-        // Filter items within each group
-        const filteredItems = group.items.filter((item) => item.label.toLowerCase().includes(query))
-
-        // Only return groups that have matching items
-        if (filteredItems.length > 0) {
-          return {
-            ...group,
-            items: filteredItems,
-          }
-        }
-        return null
-      })
-      .filter(Boolean) // Remove null groups
-  }, [searchQuery])
-
-  // Clear search query
-  const clearSearch = () => {
-    setSearchQuery("")
-  }
+  const clearSearch = () => setSearchQuery("")
 
   return (
-    <Sidebar className="border-r border-slate-200 dark:border-slate-800">
+    <Sidebar className="border-r border-slate-200 dark:border-slate-800 bg-gradient-to-b from-slate-50 to-white dark:from-slate-900 dark:to-slate-950">
       <SidebarHeader className="pb-0">
-        <div className="flex items-center justify-center py-6">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-emerald-500 text-white">
-              <span className="font-bold text-lg">W</span>
+        <div className="flex items-center justify-center py-8">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-lg">
+                <span className="font-bold text-xl text-white">W</span>
+              </div>
+              <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 animate-pulse"></div>
             </div>
-            <span className="font-bold text-xl tracking-tight">Wigmore IT</span>
+            <div>
+              <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+                Wigmore IT
+              </span>
+              <div className="flex items-center gap-1 mt-0.5">
+                <Sparkles className="h-3 w-3 text-emerald-500" />
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Pro</span>
+              </div>
+            </div>
           </div>
         </div>
-        <SidebarSeparator />
-        <div className="px-4 py-3">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+
+        <Separator className="bg-gradient-to-r from-transparent via-slate-200 to-transparent dark:via-slate-700" />
+
+        <div className="px-4 py-4">
+          <div className="relative group">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
               type="search"
-              placeholder="Search..."
-              className="w-full bg-slate-50 dark:bg-slate-900 pl-8 pr-8 text-sm border-slate-200 dark:border-slate-700 focus-visible:ring-emerald-500"
+              placeholder="Search menu..."
+              className="w-full bg-white/60 dark:bg-slate-800/60 pl-10 pr-10 py-2.5 text-sm border-slate-200/50 dark:border-slate-700/50 rounded-lg shadow-sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
             {searchQuery && (
               <button
-                className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                 onClick={clearSearch}
               >
                 <X className="h-4 w-4" />
-                <span className="sr-only">Clear search</span>
               </button>
             )}
           </div>
         </div>
       </SidebarHeader>
-      <SidebarContent className="px-2">
-        {filteredMenuItems.length === 0 ? (
-          <div className="px-4 py-8 text-center text-muted-foreground">
-            <p>No menu items found</p>
-            <Button variant="link" className="mt-2 text-emerald-500 hover:text-emerald-600" onClick={clearSearch}>
-              Clear search
+
+      <SidebarContent className="px-3">
+        <SidebarMenu>
+          {filteredItems.map((item, index) => (
+            <SidebarMenuItem key={index}>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive(item.path)}
+                className={`
+                  mx-2 mb-2 rounded-lg transition-all duration-300 hover:scale-[1.02]
+                  ${isActive(item.path)
+                    ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md"
+                    : "hover:bg-slate-100 dark:hover:bg-slate-800"
+                  }
+                `}
+              >
+                <Link to={item.path} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium">
+                  <div className={`p-1.5 rounded-md ${isActive(item.path) ? "bg-white/20" : "bg-slate-100 dark:bg-slate-800"}`}>
+                    {React.cloneElement(item.icon, {
+                      className: `h-4 w-4 ${isActive(item.path) ? "text-white" : "text-slate-600 dark:text-slate-300"}`
+                    })}
+                  </div>
+                  <span className={isActive(item.path) ? "text-white" : "text-slate-700 dark:text-slate-200"}>
+                    {item.label}
+                  </span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarContent>
+
+      <SidebarFooter className="border-t border-slate-200/50 dark:border-slate-700/50 bg-white/60 dark:bg-slate-800/60">
+        <div className="p-4 space-y-2">
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-white/60 dark:bg-slate-800/60 border border-slate-200/50 dark:border-slate-700/50 shadow-sm">
+            <Avatar className="h-10 w-10 border-2 border-emerald-400 shadow-md">
+              <AvatarImage src="/placeholder.svg?key=profile" />
+              <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-emerald-600 text-white font-semibold">JD</AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">John Doe</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">john.doe@wigmore-it.com</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="ghost" size="sm" className="flex gap-2 justify-start text-xs px-3 py-2 h-auto rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+              <UserIcon className="h-3 w-3 text-blue-500" />
+              Profile
+            </Button>
+            <Button variant="ghost" size="sm" className="flex gap-2 justify-start text-xs px-3 py-2 h-auto rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+              <Settings className="h-3 w-3 text-purple-500" />
+              Settings
             </Button>
           </div>
-        ) : (
-          filteredMenuItems.map((group, groupIndex) => (
-            <SidebarGroup key={groupIndex} className="mb-2">
-              <Collapsible defaultOpen={searchQuery.length > 0 || groupIndex === 0} className="group/collapsible">
-                <SidebarGroupLabel asChild>
-                  <CollapsibleTrigger className="flex w-full items-center py-2 px-3 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                    {group.icon}
-                    <span className="font-medium ml-2 text-sm">{group.group}</span>
-                    {group.badge && (
-                      <Badge variant="outline" className="ml-auto mr-2 px-1.5 py-0 text-xs">
-                        {group.badge}
-                      </Badge>
-                    )}
-                    <ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                  </CollapsibleTrigger>
-                </SidebarGroupLabel>
-                <CollapsibleContent>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      {group.items.map((item, itemIndex) => (
-                        <SidebarMenuItem key={itemIndex}>
-                          <SidebarMenuButton 
-                            asChild 
-                            isActive={isActive(item.path)}
-                            className="transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                            tooltip={item.label}
-                          >
-                            <Link to={item.path} className="flex items-center text-slate-700 dark:text-slate-300 text-sm">
-                              {item.icon && <span className="mr-2">{item.icon}</span>}
-                              <span>{item.label}</span>
-                            </Link>
-                          </SidebarMenuButton>
-                          {item.badge && (
-                            <SidebarMenuBadge className={`${item.badge === 'New' ? 'bg-emerald-500' : 'bg-slate-600'} text-white`}>
-                              {item.badge}
-                            </SidebarMenuBadge>
-                          )}
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </CollapsibleContent>
-              </Collapsible>
-            </SidebarGroup>
-          ))
-        )}
-      </SidebarContent>
-      <SidebarFooter>
-        <SidebarSeparator />
-        <div className="p-4">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="w-full justify-start px-2 hover:bg-slate-100 dark:hover:bg-slate-800">
-                <div className="flex items-center gap-3 w-full">
-                  <Avatar className="h-8 w-8 border-2 border-emerald-500">
-                    <AvatarImage src="/placeholder.svg?key=r5yvn" alt="John Doe" />
-                    <AvatarFallback className="bg-emerald-100 text-emerald-700">JD</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 truncate text-left">
-                    <p className="text-sm font-medium">John Doe</p>
-                    <p className="truncate text-xs text-muted-foreground">john.doe@wigmore-it.com</p>
-                  </div>
-                  <Settings className="h-4 w-4 text-slate-400" />
-                </div>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-[200px]">
-              <DropdownMenuItem>
-                <UserIcon className="mr-2 h-4 w-4" />
-                <span>Profile</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Settings className="mr-2 h-4 w-4" />
-                <span>Settings</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-red-500 focus:text-red-500">
-                <LogOut className="mr-2 h-4 w-4" />
-                <span>Log out</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full flex gap-2 justify-center text-xs px-3 py-2.5 h-auto rounded-lg text-red-600 border border-red-200/50 dark:border-red-800/50 hover:bg-red-50 dark:hover:bg-red-950/50"
+          >
+            <LogOut className="h-3 w-3" />
+            Log out
+          </Button>
         </div>
       </SidebarFooter>
     </Sidebar>

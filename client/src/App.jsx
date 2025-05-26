@@ -135,6 +135,7 @@ import FieldConfiguration from './components/EditFields';
 
 import CompanyTimelinePage from './components/ActivityFeedByCompany';
 import ActivityTimeline from './components/ActivityFeed';
+import TimelineMigrationTool from './components/TimelineMigrationTool';
 
 // Layout Component with Sidebar and Content
 const Layout = ({ children }) => {
@@ -190,6 +191,14 @@ const App = () => {
             element={
               <Layout>
                 <DashBoard />
+              </Layout>
+            }
+          />
+               <Route
+            path="/timelinemigration"
+            element={
+              <Layout>
+                <TimelineMigrationTool />
               </Layout>
             }
           />

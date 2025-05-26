@@ -205,6 +205,10 @@ const FieldsMigration = () => {
     if (sourceUrl && sourceToken && renameSourceObjectSelection) {
       setIsLoadingRenameFields(true)
       try {
+        // First ensure we have source objects loaded
+        if (sourceObjects.length === 0) {
+          await fetchSourceObjectsData()
+        }
         const fields = await fetchFieldNames(sourceUrl, sourceToken, renameSourceObjectSelection)
         setRenameSourceFields(fields)
       } catch (error) {
@@ -214,7 +218,7 @@ const FieldsMigration = () => {
         setIsLoadingRenameFields(false)
       }
     }
-  }, [sourceUrl, sourceToken, renameSourceObjectSelection])
+  }, [sourceUrl, sourceToken, renameSourceObjectSelection, sourceObjects.length, fetchSourceObjectsData])
 
   // Fetch fields for delete when source object is selected
   const fetchDeleteFieldsData = useCallback(async () => {
@@ -289,6 +293,11 @@ const FieldsMigration = () => {
       setRenameFields([{ id: 1, currentName: "", newName: "", source: "" }])
       setRenameSourceObjectSelection(null)
       setSourceFieldsSearch("")
+
+      // Ensure source objects are loaded when switching to rename tab
+      if (sourceUrl && sourceToken && sourceObjects.length === 0) {
+        fetchSourceObjectsData()
+      }
     } else if (key === "3") {
       // Deletion Fields tab
       setDeleteFields([])
@@ -500,16 +509,13 @@ const FieldsMigration = () => {
       targetObject: targetObjectSelection,
       selectedFields,
       totalSelected: selectedFields.length,
-      
     })
-
 
     return {
       sourceObject: sourceObjectSelection,
       targetObject: targetObjectSelection,
       selectedFields,
       totalSelected: selectedFields.length,
-      
     }
   }
 
@@ -562,12 +568,12 @@ const FieldsMigration = () => {
     }
 
     // Log the selected fields before migration
-const fieldsToMigrate = {
-    ...logSelectedFieldsForMigration(),
-    ...(sourceUrl && sourceToken && targetUrl && targetToken
+    const fieldsToMigrate = {
+      ...logSelectedFieldsForMigration(),
+      ...(sourceUrl && sourceToken && targetUrl && targetToken
         ? { sourceUrl, sourceToken, targetUrl, targetToken }
         : {}),
-};
+    }
     setIsMigrating(true)
     setMigrationResult(null)
 
@@ -785,6 +791,11 @@ const fieldsToMigrate = {
   // Filter source fields based on search
   const filteredSourceFields = deleteObjectSelection
     ? deleteFields.filter((field) => field.name.toLowerCase().includes(sourceFieldsSearch.toLowerCase()))
+    : []
+
+  // Filter rename source fields based on search
+  const filteredRenameSourceFields = renameSourceObjectSelection
+    ? renameSourceFields.filter((field) => field.name.toLowerCase().includes(sourceFieldsSearch.toLowerCase()))
     : []
 
   // Filter target fields based on search
@@ -1789,6 +1800,12 @@ const fieldsToMigrate = {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Source Object</label>
+                    {isLoadingSourceObjects ? (
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Spin size="small" />
+                        <Text className="text-sm text-gray-500">Loading source objects...</Text>
+                      </div>
+                    ) : null}
                     <Select
                       placeholder="Select source object"
                       className="w-full"
@@ -1877,12 +1894,12 @@ const fieldsToMigrate = {
                               dropdownRender={(menu) => (
                                 <div>
                                   {menu}
-                                  {filteredSourceFields.length > fieldsPerPage && (
+                                  {filteredRenameSourceFields.length > fieldsPerPage && (
                                     <div className="p-2 border-t flex justify-center">
                                       <Pagination
                                         current={sourceFieldsPage}
                                         pageSize={fieldsPerPage}
-                                        total={filteredSourceFields.length}
+                                        total={filteredRenameSourceFields.length}
                                         onChange={setSourceFieldsPage}
                                         size="small"
                                         showSizeChanger={false}
@@ -1892,17 +1909,19 @@ const fieldsToMigrate = {
                                 </div>
                               )}
                             >
-                              {paginatedSourceFields.map((f) => (
-                                <Option key={f.id} value={f.name}>
-                                  <div className="flex items-center">
-                                    <span>{f.name}</span>
-                                    <Tag color={typeColors[f.type]} style={{ marginLeft: 8, borderRadius: "10px" }}>
-                                      {f.type}
-                                    </Tag>
-                                    {f.isRequired && <Badge status="error" text="Required" className="ml-2" />}
-                                  </div>
-                                </Option>
-                              ))}
+                              {filteredRenameSourceFields
+                                .slice((sourceFieldsPage - 1) * fieldsPerPage, sourceFieldsPage * fieldsPerPage)
+                                .map((f) => (
+                                  <Option key={f.id} value={f.name}>
+                                    <div className="flex items-center">
+                                      <span>{f.name}</span>
+                                      <Tag color={typeColors[f.type]} style={{ marginLeft: 8, borderRadius: "10px" }}>
+                                        {f.type}
+                                      </Tag>
+                                      {f.isRequired && <Badge status="error" text="Required" className="ml-2" />}
+                                    </div>
+                                  </Option>
+                                ))}
                             </Select>
                           </div>
 

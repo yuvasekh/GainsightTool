@@ -17,7 +17,7 @@ exports.listObjects = async (req, res) => {
     }
 
     const baseUrl = `${instance.instanceUrl}/v1/meta/objectViews/executeFilter`;
-
+console.log(baseUrl,req.body)
     const filterBody = {
       stored: {
         filters: [
