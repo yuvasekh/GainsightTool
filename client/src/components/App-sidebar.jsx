@@ -139,25 +139,6 @@ const AppSidebar = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="ghost" size="sm" className="flex gap-2 justify-start text-xs px-3 py-2 h-auto rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
-              <UserIcon className="h-3 w-3 text-blue-500" />
-              Profile
-            </Button>
-            <Button variant="ghost" size="sm" className="flex gap-2 justify-start text-xs px-3 py-2 h-auto rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
-              <Settings className="h-3 w-3 text-purple-500" />
-              Settings
-            </Button>
-          </div>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full flex gap-2 justify-center text-xs px-3 py-2.5 h-auto rounded-lg text-red-600 border border-red-200/50 dark:border-red-800/50 hover:bg-red-50 dark:hover:bg-red-950/50"
-          >
-            <LogOut className="h-3 w-3" />
-            Log out
-          </Button>
         </div>
       </SidebarFooter>
     </Sidebar>
