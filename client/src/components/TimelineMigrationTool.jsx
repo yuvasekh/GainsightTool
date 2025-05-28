@@ -99,7 +99,7 @@ const DataMigrationComponent = () => {
   // Updated migration function to call the actual API endpoint
   const startMigration = async () => {
     try {
-      const response = await fetch("https://gainsighttool-ox2n.onrender.com/api/timeline/totangomigratecompanyTimeLine", {
+      const response = await fetch("http://localhost:5000/api/timeline/migratecompanyTimeLine", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
