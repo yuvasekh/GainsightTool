@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-
 import {
   ArrowLeft,
   Building,
@@ -15,42 +14,57 @@ import {
   Eye,
   Paperclip,
   Clock,
-  Users,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Pagination, PaginationItem, PaginationPrevious, PaginationNext } from "@/components/ui/pagination"
-import { useNavigate, useParams } from "react-router-dom"
+import { useNavigate, useParams, useLocation } from "react-router-dom"
 import { fetchCompanyTimeline } from "@/api/api"
-import ActivityAttachmentsModal from "@/components/activity-attachments-modal"
+
 
 export default function CompanyTimeline() {
-  const value = useParams()
-  console.log(value)
-  const [companyName, setCompanyName] = useState("")
+  const { companyId } = useParams()
+  const location = useLocation()
+  const router = useNavigate()
+
+  // Get credentials from navigation state
+  const { instanceUrl, instanceToken, companyName: passedCompanyName } = location.state || {}
+
+  const [companyName, setCompanyName] = useState(passedCompanyName || "")
   const [activities, setActivities] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [pageSize, setPageSize] = useState(20)
-  const router = useNavigate()
 
   // State for the attachments modal
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedActivity, setSelectedActivity] = useState(null)
 
   useEffect(() => {
-    fetchCompanyTimelineData()
-  }, [])
+    if (!instanceUrl || !instanceToken) {
+      setError("Missing instance credentials. Please go back and connect first.")
+      setLoading(false)
+      return
+    }
+    fetchCompanyTimelineData(currentPage)
+  }, [currentPage, instanceUrl, instanceToken, companyId])
 
-  const fetchCompanyTimelineData = async (page) => {
+  const fetchCompanyTimelineData = async (page = 0) => {
+    if (!instanceUrl || !instanceToken) {
+      setError("Missing instance credentials")
+      return
+    }
+
     try {
       setLoading(true)
+      setError(null)
 
-      const responseData = await fetchCompanyTimeline("", "", 20, value?.companyId, 0)
+      const responseData = await fetchCompanyTimeline(instanceUrl, instanceToken, pageSize, companyId, page)
       console.log(responseData)
       const { data } = responseData
 
@@ -73,17 +87,13 @@ export default function CompanyTimeline() {
   const downloadAttachment = (attachmentUrl, fileName) => {
     try {
       console.log(attachmentUrl, fileName, "yuva")
-      // Use window.open to trigger download
-      const link = document.createElement('a')
+      const link = document.createElement("a")
       link.href = attachmentUrl
-      link.download = fileName || 'download'
-      link.target = '_blank'
+      link.download = fileName || "download"
+      link.target = "_blank"
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
-      
-      // Alternative method using window.open
-      // window.open(attachmentUrl, '_blank')
     } catch (error) {
       console.error("Error downloading attachment:", error)
       alert("Failed to download attachment. Please try again.")
@@ -91,7 +101,6 @@ export default function CompanyTimeline() {
   }
 
   const downloadAllAttachments = () => {
-    // Count total attachments
     const totalAttachments = activities.reduce((count, activity) => {
       return count + (activity.attachments?.length || 0)
     }, 0)
@@ -101,14 +110,12 @@ export default function CompanyTimeline() {
       return
     }
 
-    // For each activity with attachments, download them
     activities.forEach((activity) => {
       if (activity.attachments && activity.attachments.length > 0) {
         activity.attachments.forEach((attachment, index) => {
-          // Use a timeout to prevent browser from blocking multiple downloads
           setTimeout(() => {
             downloadAttachment(attachment.url, attachment.name)
-          }, index * 200) // Stagger downloads
+          }, index * 200)
         })
       }
     })
@@ -183,14 +190,39 @@ export default function CompanyTimeline() {
     }
   }
 
+  // Show error if credentials are missing
+  if (!instanceUrl || !instanceToken) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+        <div className="container mx-auto py-8 px-4">
+          <Button
+            variant="ghost"
+            className="mb-6 pl-0 flex items-center gap-2 hover:bg-white/50 transition-colors"
+            onClick={() => router(-1)}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Timeline
+          </Button>
+
+          <Alert variant="destructive">
+            <AlertDescription>
+              Missing instance credentials. Please go back to the timeline and connect with your instance URL and token
+              first.
+            </AlertDescription>
+          </Alert>
+        </div>
+      </main>
+    )
+  }
+
   if (loading && currentPage === 0) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
         <div className="container mx-auto py-8 px-4">
-          <Button 
-            variant="ghost" 
-            className="mb-6 pl-0 flex items-center gap-2 hover:bg-white/50 transition-colors" 
-            onClick={() => router()}
+          <Button
+            variant="ghost"
+            className="mb-6 pl-0 flex items-center gap-2 hover:bg-white/50 transition-colors"
+            onClick={() => router(-1)}
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Timeline
@@ -218,10 +250,10 @@ export default function CompanyTimeline() {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
         <div className="container mx-auto py-8 px-4">
-          <Button 
-            variant="ghost" 
-            className="mb-6 pl-0 flex items-center gap-2 hover:bg-white/50 transition-colors" 
-            onClick={() => router()}
+          <Button
+            variant="ghost"
+            className="mb-6 pl-0 flex items-center gap-2 hover:bg-white/50 transition-colors"
+            onClick={() => router(-1)}
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Timeline
@@ -229,8 +261,8 @@ export default function CompanyTimeline() {
 
           <Card className="p-8 text-center border-red-200 bg-red-50">
             <div className="text-red-500 mb-4 text-lg font-medium">{error}</div>
-            <Button 
-              onClick={() => fetchCompanyTimeline(currentPage)}
+            <Button
+              onClick={() => fetchCompanyTimelineData(currentPage)}
               className="bg-red-500 hover:bg-red-600 text-white"
             >
               Try Again
@@ -247,19 +279,19 @@ export default function CompanyTimeline() {
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <div className="container mx-auto py-8 px-4">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
-          <Button 
-            variant="ghost" 
-            className="pl-0 flex items-center gap-2 hover:bg-white/50 transition-colors self-start" 
-            onClick={() => router()}
+          <Button
+            variant="ghost"
+            className="pl-0 flex items-center gap-2 hover:bg-white/50 transition-colors self-start"
+            onClick={() => router(-1)}
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Timeline
           </Button>
 
           {hasAttachments && (
-            <Button 
-              variant="outline" 
-              className="flex items-center gap-2 bg-white/80 hover:bg-white border-slate-300 shadow-sm" 
+            <Button
+              variant="outline"
+              className="flex items-center gap-2 bg-white/80 hover:bg-white border-slate-300 shadow-sm"
               onClick={downloadAllAttachments}
             >
               <Download className="h-4 w-4" />
@@ -273,7 +305,7 @@ export default function CompanyTimeline() {
             <Building className="h-7 w-7 text-blue-600" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-slate-800">{companyName} Timeline</h1>
+            <h1 className="text-3xl font-bold text-slate-800">{companyName || "Company"} Timeline</h1>
             <p className="text-slate-600 mt-1">Activity history and updates</p>
           </div>
         </div>
@@ -302,8 +334,8 @@ export default function CompanyTimeline() {
           <>
             <div className="space-y-6">
               {activities.map((activity, index) => (
-                <Card 
-                  key={activity.id} 
+                <Card
+                  key={activity.id}
                   className="p-6 bg-white/80 backdrop-blur border-slate-200 hover:shadow-lg hover:bg-white/90 transition-all duration-200 hover:-translate-y-1"
                 >
                   <div className="flex items-start gap-5">
@@ -312,13 +344,13 @@ export default function CompanyTimeline() {
                         {getActivityIcon(activity.note.type)}
                       </div>
                     </div>
-                    
+
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
                         <div className="flex flex-wrap items-center gap-3">
                           <h3 className="text-lg font-semibold text-slate-800">{activity.note.subject}</h3>
-                          <Badge 
-                            variant="outline" 
+                          <Badge
+                            variant="outline"
                             className={`${getActivityTypeColor(activity.note.type)} font-medium px-3 py-1`}
                           >
                             {activity.note.type}
@@ -355,15 +387,13 @@ export default function CompanyTimeline() {
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                             {activity.attachments.slice(0, 6).map((attachment, idx) => (
-                              <div 
-                                key={idx} 
+                              <div
+                                key={idx}
                                 className="flex items-center gap-2 p-2 bg-white/60 rounded-lg border border-slate-200 hover:bg-white/80 transition-colors cursor-pointer"
                                 onClick={() => downloadAttachment(attachment.url, attachment.name)}
                               >
                                 <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                                <span className="text-xs text-slate-700 truncate font-medium">
-                                  {attachment.name}
-                                </span>
+                                <span className="text-xs text-slate-700 truncate font-medium">{attachment.name}</span>
                               </div>
                             ))}
                             {activity.attachments.length > 6 && (
@@ -401,9 +431,7 @@ export default function CompanyTimeline() {
                       <PaginationPrevious
                         onClick={() => handlePageChange(currentPage - 1)}
                         className={`${
-                          currentPage === 0 
-                            ? "pointer-events-none opacity-50" 
-                            : "hover:bg-slate-100"
+                          currentPage === 0 ? "pointer-events-none opacity-50" : "hover:bg-slate-100"
                         } transition-colors`}
                       />
                     </PaginationItem>
@@ -411,7 +439,7 @@ export default function CompanyTimeline() {
                     {Array.from({ length: Math.min(5, totalPages) }).map((_, index) => {
                       const pageIndex = Math.max(0, Math.min(currentPage - 2, totalPages - 5)) + index
                       if (pageIndex >= totalPages) return null
-                      
+
                       return (
                         <PaginationItem key={pageIndex}>
                           <Button
@@ -419,8 +447,8 @@ export default function CompanyTimeline() {
                             size="icon"
                             onClick={() => handlePageChange(pageIndex)}
                             className={`w-10 h-10 transition-colors ${
-                              currentPage === pageIndex 
-                                ? "bg-blue-600 hover:bg-blue-700 text-white shadow-md" 
+                              currentPage === pageIndex
+                                ? "bg-blue-600 hover:bg-blue-700 text-white shadow-md"
                                 : "hover:bg-slate-100"
                             }`}
                           >
@@ -434,9 +462,7 @@ export default function CompanyTimeline() {
                       <PaginationNext
                         onClick={() => handlePageChange(currentPage + 1)}
                         className={`${
-                          currentPage === totalPages - 1 
-                            ? "pointer-events-none opacity-50" 
-                            : "hover:bg-slate-100"
+                          currentPage === totalPages - 1 ? "pointer-events-none opacity-50" : "hover:bg-slate-100"
                         } transition-colors`}
                       />
                     </PaginationItem>
@@ -446,14 +472,6 @@ export default function CompanyTimeline() {
             )}
           </>
         )}
-
-        {/* Attachments Modal */}
-        <ActivityAttachmentsModal
-          isOpen={isModalOpen}
-          onClose={closeAttachmentsModal}
-          activity={selectedActivity}
-          attachments={selectedActivity?.attachments || []}
-        />
       </div>
     </main>
   )
