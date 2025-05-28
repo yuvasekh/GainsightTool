@@ -319,7 +319,7 @@ async function getDisplayNameById(instanceUrl, sessionToken, cacheKey, id, sourc
       // Cache the response
       sourceTouchpointTypesCache = touchpointTypes;
     }
-console.log(touchpointTypes, "touchpointTypes");
+    console.log(touchpointTypes, "touchpointTypes");
     // Find and return display_name by id
     const touchpointType = touchpointTypes.find(type => type.id === id);
     console.log(touchpointType, "touchpointType");
@@ -353,10 +353,10 @@ async function createDraft(draftPayload, targetInstanceUrl, targetInstanceToken)
 }
 async function getActivityTypeIdByType(type, instanceUrl, sessionToken, cacheKey, companyId) {
   const allActivityTypes = await getAllActivityTypes(instanceUrl, sessionToken, cacheKey, companyId);
-console.log(allActivityTypes, "allActivityTypes");
-console.log(type, "type");
+  console.log(allActivityTypes, "allActivityTypes");
+  console.log(type, "type");
   const matched = allActivityTypes.find(
-    activityType => activityType.type?.toLowerCase() === type.toLowerCase()
+    activityType => activityType.name?.toLowerCase() === type.toLowerCase()
   );
   console.log(matched, "matched");
 
@@ -863,7 +863,7 @@ async function processTotangoTimelineEntry(
         activityCache[meetingType] = activityTypeId;
       }
     }
-
+    console.log(activityTypeId, "activityTypeId")
     if (!activityTypeId) {
       return { success: false, reason: `No activity type mapping found for meeting type: ${meetingType}` };
     }
@@ -897,69 +897,71 @@ async function processTotangoTimelineEntry(
         externalAttendees.push(attendeeObj);
       }
     }
+    // console.log(entry,"yuvae")
 
     // 5. Build Draft Payload
-    const draftPayload = {
-      lastModifiedByUser: {
-        gsId: userId,
-        name: authorName,
-        eid: null,
-        esys: null,
-        pp: ""
-      },
-      note: {
-        customFields: {
-          internalAttendees,
-          externalAttendees,
-          type: meetingType || 'Meeting',
-          subject: entry.properties?.subject || 'Totango Meeting',
-          activityDate: entry.timestamp ? new Date(entry.timestamp).toISOString() : new Date().toISOString(),
-          content: entry.note_content || '',
-          plainText: entry.note_content?.replace(/<[^>]*>/g, '') || '',
-          trackers: null
-        },
-        mentions: [],
-        relatedRecords: null,
-        meta: {
-          activityTypeId,
-          ctaId: null,
-          source: "C360",
-          hasTask: entry.properties?.has_tasks || false,
-          emailSent: entry.properties?.email_sent || false,
-          systemType: "GAINSIGHT",
-          notesTemplateId: null
-        }
-      },
-      author: {
-        id: userId,
-        obj: "User",
-        name: authorName,
-        email: authorEmail,
-        eid: null,
-        eobj: "User",
-        epp: null,
-        esys: "SALESFORCE",
-        sys: "GAINSIGHT",
-        pp: ""
-      },
-      syncedToSFDC: false,
-      tasks: [],
-      attachments: [],
-      contexts: [
-        {
-          id: companyId,
-          base: true,
-          obj: "Company",
-          lbl: companyLabel,
-          eid: null,
-          eobj: "Account",
-          eurl: null,
-          esys: "SALESFORCE",
-          dsp: true
-        }
-      ]
-    };
-
+ const draftPayload = {
+  lastModifiedByUser: {
+    gsId: userId,
+    name: authorName,
+    eid: null,
+    esys: null,
+    pp: ""
+  },
+  note: {
+    customFields: {},
+    internalAttendees: [
+      null  // This should be an array with null as first element, not just the variable
+    ],
+    externalAttendees: [], // This should be an empty array, not just the variable
+    type: meetingType || "93b4649c-8459-4f56-be3f-be75f7506ee0", // Use UUID format like in correct structure
+    subject: entry.properties?.subject || "Totango Meeting",
+    activityDate: entry.timestamp ? new Date(entry.timestamp).toISOString() : new Date().toISOString(),
+    content: entry.note_content?.text || "",
+    plainText: entry.note_content?.text?.replace(/<[^>]*>/g, "") || "",
+    trackers: null
+  },
+  mentions: [], // This should be at root level, not inside note
+  relatedRecords: null, // This should be at root level, not inside note
+  meta: { // This should be at root level, not inside note
+    activityTypeId: activityTypeId || "3cd4991d-03d3-40db-bf45-83c60093fcbf",
+    ctaId: null,
+    source: "C360",
+    hasTask: entry.properties?.has_tasks || false,
+    emailSent: entry.properties?.email_sent || false,
+    systemType: "GAINSIGHT",
+    notesTemplateId: null
+  },
+  author: {
+    id: userId, // Use userId variable instead of hardcoded value
+    obj: "User",
+    name: authorName,
+    email: authorEmail,
+    eid: null,
+    eobj: "User",
+    epp: null,
+    esys: "SALESFORCE",
+    sys: "GAINSIGHT",
+    pp: ""
+  },
+  syncedToSFDC: false,
+  tasks: [],
+  attachments: [],
+  contexts: [
+    {
+      id: companyId,
+      base: true,
+      obj: "Company",
+      lbl: companyLabel,
+      eid: null,
+      eobj: "Account",
+      eurl: null,
+      esys: "SALESFORCE",
+      dsp: true
+    }
+  ]
+};
+    console.log(draftPayload, "draftPayload");
     // 6. Create Draft and Post Timeline Entry
     const draftId = await createDraft(draftPayload, targetInstanceUrl, targetInstanceToken);
     if (!draftId) {
@@ -967,7 +969,7 @@ async function processTotangoTimelineEntry(
     }
 
     const timelinePayload = { ...draftPayload, id: draftId };
-
+    console.log(timelinePayload, "timelinePayload");
     const result = await axios.post(`${targetInstanceUrl}/v1/ant/v2/activity`, timelinePayload, {
       headers: {
         'Content-Type': 'application/json',
@@ -1013,7 +1015,7 @@ exports.TotangoMigrateTimelines = async (req, res) => {
       // https://app.totango.com?account_id=0015p00005R7ysqAAB&include_formatting=true
       try {
         const url = `${sourceInstanceUrl}/t01/mend/api/v2/events/?account_id=${accountId}&include_formatting=true`;
-        console.log(url, "url");
+        // console.log(url, "url");
         const config = {
           method: 'get',
           url,
@@ -1025,7 +1027,7 @@ exports.TotangoMigrateTimelines = async (req, res) => {
 
         const response = await axios(config);
         const events = response?.data || [];
-        console.log(response?.data, "events");
+        // console.log(response?.data, "events");
         console.log(`Fetched ${events.length} events for account ${accountId}`);
 
         // Filter for events with meeting_type property
@@ -1114,7 +1116,7 @@ exports.TotangoMigrateTimelines = async (req, res) => {
         } else {
           failureCount++;
           if (result.status === 'rejected') {
-            console.error('Batch promise rejected:', result.reason);
+            // console.error('Batch promise rejected:', result.reason);
           } else if (result.value.reason) {
             console.warn('Entry failed:', result.value.reason);
           }
