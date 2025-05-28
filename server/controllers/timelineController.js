@@ -164,24 +164,33 @@ async function getAllUsers(instanceUrl, sessionCookie) {
     return [];
   }
 }
-
 async function getAllCompanies(instanceUrl, sessionCookie) {
   if (companyDataCache) return companyDataCache;
-  
+
   try {
     let allCompanies = [];
     let pageNumber = 1;
-    let hasMore = true;
 
-    while (hasMore) {
+    while (true) {
       const response = await axios.post(
         `${instanceUrl}/v1/dataops/gdm/list?object=Company`,
         {
-          limit: 200,
-          pageNumber: pageNumber,
+          limit: 25,
+          pageNumber,
           searchString: "",
           clause: null,
-          fields: ["Name", "Gsid"]
+          fields: [
+            "Name",
+            "Industry",
+            "Stage",
+            "Status",
+            "Employees",
+            "Users",
+            "OriginalContractDate",
+            "Csm",
+            "Gsid"
+          ],
+          resolveGsids: false
         },
         {
           headers: {
@@ -191,12 +200,12 @@ async function getAllCompanies(instanceUrl, sessionCookie) {
         }
       );
 
-      const companies = response.data.data.data || [];
-      allCompanies = [...allCompanies, ...companies];
-      
-      // Check if there are more pages
-      const totalRecords = response.data.data.totalRecords;
-      hasMore = (pageNumber * 200) < totalRecords;
+      const companies = response.data?.data?.data || [];
+
+      // Stop when no more companies
+      if (companies.length === 0) break;
+
+      allCompanies.push(...companies);
       pageNumber++;
     }
 
@@ -208,12 +217,12 @@ async function getAllCompanies(instanceUrl, sessionCookie) {
   }
 }
 
+
 async function getAllActivityTypes(instanceUrl, sessionToken, cacheKey,companyId) {
   const cache = cacheKey === 'source' ? sourceActivityTypesCache : targetActivityTypesCache;
   if (cache) return cache;
 
   try {
-    // https://demo-wigmore.gainsightcloud.com/v1/ant//forms?context=Company&contextId=1P02G8GWQ6OXI3IU062N714UTN8IH1NWKK6Y&showHidden=false
     const config = {
       method: 'get',
       url: `${instanceUrl}/v1/ant/forms?context=Company&&contextId=${companyId}&showHidden=false`,
@@ -324,6 +333,7 @@ async function processTimelineEntry(entry, userCache, companyCache, activityCach
     // Handle company cache
     let companyId;
     const companyLabel = entry.contexts?.[0]?.lbl;
+    // console.log(companyLabel,"companyLabel")
     if (companyLabel) {
       if (companyCache[companyLabel]) {
         companyId = companyCache[companyLabel];
@@ -334,6 +344,7 @@ async function processTimelineEntry(entry, userCache, companyCache, activityCach
     }
 
     if (!companyId) {
+      console.log(companyLabel,"companyLabelnot fpund")
       return { success: false, reason: 'No company ID found' };
     }
 
@@ -393,7 +404,7 @@ async function processTimelineEntry(entry, userCache, companyCache, activityCach
         notesTemplateId: null
       },
       author: {
-        id: userId,
+        id: "1P01E316G9DAPFOLE62W39269HB5N6R5Y6TZ",
         obj: "User",
         name: entry.author?.name,
         email: entry.author?.email,
@@ -441,7 +452,8 @@ console.log(timelinePayload,"timelinePayload")
       maxBodyLength: Infinity
     };
 
-    await axios(postConfig);
+    var result=await axios(postConfig);
+    console.log(result?.data,"result?.data")
     return { success: true };
 
   } catch (error) {
