@@ -74,6 +74,7 @@ exports.fetchTimeLine = async (req, res) => {
 
 exports.CompanyTimeLine = async (req, res) => {
   try {
+    console.log(req.body, "req.body");
     const { instanceUrl, instanceToken, companyId, page = 0, size = 20 } = req.body;
 
     if (!instanceUrl || !instanceToken || !companyId) {
