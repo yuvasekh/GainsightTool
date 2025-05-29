@@ -390,7 +390,7 @@ console.log(entry.note?.customFields?.internalAttendees, "entry.note?.customFiel
         notesTemplateId: null
       },
       author: {
-        id: '1P01JXEFEL6ZONGR1M7JKUQDFDY3DP121C2T',
+        id: '1P01E316G9DAPFOLE6V9Z586JRYFUW88XLGG',
         obj: "User",
         name: entry.author?.name,
         email: entry.author?.email,
