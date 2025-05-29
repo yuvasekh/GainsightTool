@@ -374,7 +374,7 @@ async function processTotangoTimelineEntry(
   targetInstanceToken,
   companyAccountMapping = null,
   sourceInstanceUrl,
-  sourceInstanceToken
+  sourceInstanceToken,gainsightUserId
 ) {
   try {
     // console.log(`Processing Totango entry for account: ${entry.sourceAccountId}`);
@@ -434,7 +434,8 @@ async function processTotangoTimelineEntry(
         'target',
         companyId,
         sourceInstanceUrl,
-        sourceInstanceToken
+        sourceInstanceToken,
+        
       );
       if (activityTypeId) {
         activityCache[meetingType] = activityTypeId;
@@ -510,7 +511,7 @@ async function processTotangoTimelineEntry(
         notesTemplateId: null
       },
       author: {
-        id: '1P01E316G9DAPFOLE6V9Z586JRYFUW88XLGG',
+        id: gainsightUserId,
         obj: "User",
         name: authorName,
         email: authorEmail,
@@ -571,6 +572,7 @@ exports.TotangoMigrateTimelines = async (req, res) => {
       targetInstanceUrl, // Gainsight URL
       targetInstanceToken, // Gainsight auth token
       accountIds = [], // Array of account IDs to migrate
+      gainsightUserId,
       companyAccountMapping = null // Optional mapping object: { totangoAccountId: gainsightCompanyId }
     } = req.body;
 
@@ -675,7 +677,7 @@ exports.TotangoMigrateTimelines = async (req, res) => {
           targetInstanceToken,
           companyAccountMapping,
           sourceInstanceUrl,
-          sourceInstanceToken
+          sourceInstanceToken,gainsightUserId
         )
       );
 
