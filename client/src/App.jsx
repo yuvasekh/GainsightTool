@@ -136,6 +136,7 @@ import FieldConfiguration from './components/EditFields';
 import CompanyTimelinePage from './components/ActivityFeedByCompany';
 import ActivityTimeline from './components/ActivityFeed';
 import TimelineMigrationTool from './components/TimelineMigrationTool';
+import TotangoGainsightMigration from './components/TotangoMigrations';
 
 // Layout Component with Sidebar and Content
 const Layout = ({ children }) => {
@@ -199,6 +200,14 @@ const App = () => {
             element={
               <Layout>
                 <TimelineMigrationTool />
+              </Layout>
+            }
+          />
+             <Route
+            path="/TotangoGainsightMigration"
+            element={
+              <Layout>
+                <TotangoGainsightMigration />
               </Layout>
             }
           />

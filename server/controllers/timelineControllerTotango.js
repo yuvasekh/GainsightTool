@@ -1,5 +1,25 @@
 const axios = require('axios');
 // Optimized helper functions with caching
+exports.getActivityTypes = async (req, res) => {
+  const { url, cookie } = req.body;
+
+  if (!url || !cookie) {
+    return res.status(400).json({ error: 'URL and cookie are required' });
+  }
+
+  try {
+    const response = await axios.get(url+"/t01/mend/api/v3/activity-types", {
+      headers: {
+        'Cookie': cookie,
+      }
+    });
+
+    res.status(200).json(response.data);
+  } catch (error) {
+    console.error('Totango API error:', error?.response?.data || error.message);
+    res.status(500).json({ error: 'Failed to fetch data from Totango', details: error?.response?.data || error.message });
+  }
+};
 let userDataCache = null;
 let companyDataCache = null;
 let sourceActivityTypesCache = null;

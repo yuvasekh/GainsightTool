@@ -34,6 +34,11 @@ const menuItems = [
     path: "/timelinemigration",
     icon: <Code className="h-4 w-4" />,
   },
+   {
+    label: "TotangoGainsightMigration",
+    path: "/TotangoGainsightMigration",
+    icon: <Code className="h-4 w-4" />,
+  },
 ]
 
 const AppSidebar = () => {
