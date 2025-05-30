@@ -56,7 +56,7 @@ const TotangoGainsightMigration = () => {
 
  const startMigration = async () => {
     try {
-      const response = await fetch("https://whatsappai-12.onrender.com/api/timeline/migratecompanyTimeLine", {
+      const response = await fetch("https://gainsighttool-1.onrender.com/api/timeline/totangomigratecompanyTimeLine", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -67,7 +67,7 @@ const TotangoGainsightMigration = () => {
           targetInstanceUrl: gainsightUrl,
           targetInstanceToken: gainsightToken,
           gainsightUserId:gainsightUserId,
-          accountId:[accountIds]
+          accountIds:[accountIds]
         }),
       })
 
@@ -227,12 +227,12 @@ const TotangoGainsightMigration = () => {
             <div className="p-3 bg-orange-100 rounded-full">
               <Database className="w-8 h-8 text-orange-600" />
             </div>
-            <ArrowRight className="w-6 h-6 text-gray-400" />
+            <ArrowRight className="w-6 h-8 text-gray-400" />
             <div className="p-3 bg-purple-100 rounded-full">
-              <Target className="w-8 h-8 text-purple-600" />
+              <Target className="w-8 h-7 text-purple-600" />
             </div>
           </div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-purple-600 bg-clip-text text-transparent mb-4">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-purple-600 bg-clip-text text-transparent mb-5">
             Totango to Gainsight Migration
           </h1>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">

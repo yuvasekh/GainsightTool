@@ -587,8 +587,6 @@ exports.TotangoMigrateTimelines = async (req, res) => {
     // Process each account ID
     for (const accountId of accountIds) {
       console.log(`Fetching timeline data for Totango account: ${accountId}...`);
-      // https://app.totango.com/t01/mend/api/v2/events/?account_id=0015p00005R7ysqAAB&include_formatting=true
-      // https://app.totango.com?account_id=0015p00005R7ysqAAB&include_formatting=true
       try {
         const url = `${sourceInstanceUrl}/t01/mend/api/v2/events/?account_id=${accountId}&include_formatting=true`;
         console.log(url, "url");
