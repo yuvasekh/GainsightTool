@@ -232,9 +232,10 @@ const TotangoGainsightMigration = () => {
               <Target className="w-8 h-7 text-purple-600" />
             </div>
           </div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-purple-600 bg-clip-text text-transparent mb-5">
-            Totango to Gainsight Migration
-          </h1>
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-purple-600 bg-clip-text text-transparent mb-5 leading-relaxed">
+  Totango to Gainsight Migration
+</h1>
+
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
             Seamlessly migrate your customer success data from Totango to Gainsight with real-time progress tracking and detailed status reports.
           </p>

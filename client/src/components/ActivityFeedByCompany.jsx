@@ -14,6 +14,7 @@ import {
   Eye,
   Paperclip,
   Clock,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -23,7 +24,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Pagination, PaginationItem, PaginationPrevious, PaginationNext } from "@/components/ui/pagination"
 import { useNavigate, useParams, useLocation } from "react-router-dom"
 import { fetchCompanyTimeline } from "@/api/api"
-
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from "@/components/ui/dialog"
 
 export default function CompanyTimeline() {
   const { companyId } = useParams()
@@ -44,6 +52,7 @@ export default function CompanyTimeline() {
   // State for the attachments modal
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedActivity, setSelectedActivity] = useState(null)
+  const [downloadingAttachments, setDownloadingAttachments] = useState(false)
 
   useEffect(() => {
     if (!instanceUrl || !instanceToken) {
@@ -86,38 +95,67 @@ export default function CompanyTimeline() {
 
   const downloadAttachment = (attachmentUrl, fileName) => {
     try {
-      console.log(attachmentUrl, fileName, "yuva")
+      console.log("Attempting to download:", fileName, "from:", attachmentUrl)
+
+      // Create a temporary anchor element
       const link = document.createElement("a")
       link.href = attachmentUrl
       link.download = fileName || "download"
       link.target = "_blank"
+      link.rel = "noopener noreferrer"
+
+      // Add to DOM, click, and remove
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
+
+      console.log("Download initiated for:", fileName)
     } catch (error) {
-      console.error("Error downloading attachment:", error)
-      alert("Failed to download attachment. Please try again.")
+      console.error("Error downloading attachment:", fileName, error)
+      // Don't show alert for individual failures when downloading all
+      if (!downloadingAttachments) {
+        alert(`Failed to download ${fileName}. Please try again.`)
+      }
     }
   }
 
   const downloadAllAttachments = () => {
-    const totalAttachments = activities.reduce((count, activity) => {
-      return count + (activity.attachments?.length || 0)
-    }, 0)
+    // Get all attachments from all activities
+    const allAttachments = activities.reduce((attachments, activity) => {
+      if (activity.attachments && activity.attachments.length > 0) {
+        return [...attachments, ...activity.attachments]
+      }
+      return attachments
+    }, [])
+
+    const totalAttachments = allAttachments.length
 
     if (totalAttachments === 0) {
       alert("No attachments available to download.")
       return
     }
 
-    activities.forEach((activity) => {
-      if (activity.attachments && activity.attachments.length > 0) {
-        activity.attachments.forEach((attachment, index) => {
+    console.log(
+      `Starting download of ${totalAttachments} attachments:`,
+      allAttachments.map((a) => a.name),
+    )
+
+    setDownloadingAttachments(true)
+
+    // Download attachments with staggered delays
+    allAttachments.forEach((attachment, index) => {
+      setTimeout(() => {
+        console.log(`Downloading attachment ${index + 1}/${totalAttachments}:`, attachment.name)
+        downloadAttachment(attachment.url, attachment.name)
+
+        // Set downloading to false after the last download
+        if (index === totalAttachments - 1) {
           setTimeout(() => {
-            downloadAttachment(attachment.url, attachment.name)
-          }, index * 200)
-        })
-      }
+            setDownloadingAttachments(false)
+            console.log("All downloads initiated")
+          }, 500)
+        }
+      }, index * 500) // 500ms delay between each download
     })
   }
 
@@ -258,7 +296,6 @@ export default function CompanyTimeline() {
             <ArrowLeft className="h-4 w-4" />
             Back to Timeline
           </Button>
-
           <Card className="p-8 text-center border-red-200 bg-red-50">
             <div className="text-red-500 mb-4 text-lg font-medium">{error}</div>
             <Button
@@ -293,9 +330,36 @@ export default function CompanyTimeline() {
               variant="outline"
               className="flex items-center gap-2 bg-white/80 hover:bg-white border-slate-300 shadow-sm"
               onClick={downloadAllAttachments}
+              disabled={downloadingAttachments}
             >
-              <Download className="h-4 w-4" />
-              Download All Attachments
+              {downloadingAttachments ? (
+                <>
+                  <span className="animate-spin mr-2">
+                    <svg className="h-4 w-4" viewBox="0 0 24 24">
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                  </span>
+                  Downloading...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  Download All Attachments
+                </>
+              )}
             </Button>
           )}
         </div>
@@ -473,6 +537,83 @@ export default function CompanyTimeline() {
           </>
         )}
       </div>
+
+      {/* Attachments Modal */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Paperclip className="h-5 w-5" />
+              Attachments
+              {selectedActivity && selectedActivity.attachments && (
+                <Badge variant="outline" className="ml-2">
+                  {selectedActivity.attachments.length} files
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedActivity && selectedActivity.note && (
+                <span className="text-sm text-slate-500">From activity: {selectedActivity.note.subject}</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </DialogClose>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+            {selectedActivity &&
+              selectedActivity.attachments &&
+              selectedActivity.attachments.map((attachment, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 hover:bg-white transition-colors cursor-pointer group"
+                  onClick={() => downloadAttachment(attachment.url, attachment.name)}
+                >
+                  <div className="p-2 bg-white rounded-md border border-slate-200">
+                    <FileText className="h-6 w-6 text-blue-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-slate-800 truncate">{attachment.name}</p>
+                    <p className="text-xs text-slate-500">Click to download</p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      downloadAttachment(attachment.url, attachment.name)
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+          </div>
+
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={closeAttachmentsModal}>
+              Close
+            </Button>
+            {selectedActivity && selectedActivity.attachments && selectedActivity.attachments.length > 0 && (
+              <Button
+                onClick={() => {
+                  selectedActivity.attachments.forEach((attachment) => {
+                    setTimeout(() => {
+                      downloadAttachment(attachment.url, attachment.name)
+                    }, 200)
+                  })
+                }}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download All
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }
