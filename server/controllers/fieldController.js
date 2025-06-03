@@ -36,7 +36,13 @@ exports.listFields = async (req, res) => {
       name: item.name,
       label: item.label
     }));
-    res.json(simplifiedFields);
+    if (req.body?.flag == true) {
+      res.json(fields);
+    }
+    else {
+      res.json(simplifiedFields);
+    }
+    // res.json(simplifiedFields);
 
   } catch (error) {
     console.error("Error listing fields:", error.message);
@@ -138,17 +144,17 @@ exports.fetchFields = async (data) => {
         "Content-Type": "application/json",
       },
     };
-// console.log(config)
+    // console.log(config)
     const response = await axios.request(config);
     console.log(response.data)
     const fields = response.data?.data?.columns;
-    const group= response.data?.data?.group
+    const group = response.data?.data?.group
     if (!fields || !Array.isArray(fields)) {
       return ({ message: "Invalid response format: 'fields' not found" });
     }
 
 
-    return {fields:fields,group:group}
+    return { fields: fields, group: group }
 
   } catch (error) {
     console.error("Error listing fields:", error.message);

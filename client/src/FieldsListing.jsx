@@ -1,6 +1,6 @@
 "use client"
 
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, useLocation } from "react-router-dom"
 import { useState, useEffect } from "react"
 import { Table, Input, Select, Button, Spin, Tag, DatePicker, message, Modal, Typography } from "antd"
 import {
@@ -18,7 +18,10 @@ const { Option } = Select
 const { Text, Title } = Typography
 
 const FieldsListing = () => {
+   const location = useLocation();
+const { connectionDetails, objectId } = location.state || {};
   const { objectName } = useParams()
+  // console.log(connectionDetails,"yuva1")
   const navigate = useNavigate()
   const [showModal, setShowModal] = useState(false)
   const [fields, setFields] = useState([])
@@ -36,15 +39,15 @@ const FieldsListing = () => {
     const fetchFields = async () => {
       setLoading(true)
       try {
-        const response = await fetchFieldNames(objectName)
-        const apiData = response.data
-        console.log(apiData, "yuvaapiData")
-        const mappedFields = apiData[0]?.fields.map((field) => ({
-          key: field.fieldName,
-          name: field.label || field.fieldName,
+     
+        const response = await fetchFieldNames(connectionDetails?.instanceUrl, connectionDetails?.instanceToken, objectName,true)
+        // console.log(response, "response12")
+        const mappedFields = response.map((field) => ({
+          key: field.label,
+          name: field.label,
           description: "--",
-          type: field.dataType || "--",
-          fieldType: field.meta?.fieldGroupType || "--",
+          type: field.type || "--",
+          fieldType: field.meta?.group || "--",
           mapping: "--",
           lookup: field.meta?.hasLookup ? "Has Lookup" : "--",
         }))

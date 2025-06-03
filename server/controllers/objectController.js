@@ -17,7 +17,7 @@ exports.listObjects = async (req, res) => {
     }
 
     const baseUrl = `${instance.instanceUrl}/v1/meta/objectViews/executeFilter`;
-console.log(baseUrl,req.body)
+    console.log(baseUrl, req.body)
     const filterBody = {
       stored: {
         filters: [
@@ -46,7 +46,7 @@ console.log(baseUrl,req.body)
         }
       }
     );
-console.log(initialResponse?.data?.data?.totalNumberOfObjects)
+    console.log(initialResponse?.data?.data?.totalNumberOfObjects)
     const total = initialResponse?.data?.data?.totalNumberOfObjects
 
     if (!total) {
@@ -71,14 +71,20 @@ console.log(initialResponse?.data?.data?.totalNumberOfObjects)
         }
       }
     );
- const liteObjects = fullResponse?.data.data?.liteObjects || [];
+    const liteObjects = fullResponse?.data.data?.liteObjects || [];
+    console.log(liteObjects, "liteObjects")
     const filteredObjects = liteObjects.map(obj => ({
       id: obj.objectId,
       name: obj.name,
       description: obj.description
     }));
+    if (req.body?.flag) {
+      return res.json(liteObjects);
+    }
+    else {
+      res.json(filteredObjects);
+    }
 
-    res.json(filteredObjects);
   } catch (error) {
     console.error("Error listing objects:", error.message);
     res.status(500).json({

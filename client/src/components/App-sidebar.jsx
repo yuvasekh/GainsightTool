@@ -39,6 +39,11 @@ const menuItems = [
     path: "/TotangoGainsightMigration",
     icon: <Code className="h-4 w-4" />,
   },
+    {
+    label: "ViewObjects",
+    path: "/objects",
+    icon: <Code className="h-4 w-4" />,
+  },
 ]
 
 const AppSidebar = () => {
