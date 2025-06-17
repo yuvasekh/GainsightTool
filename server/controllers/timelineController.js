@@ -120,10 +120,28 @@ let companyDataCache = null;
 let sourceActivityTypesCache = null;
 let targetActivityTypesCache = null;
 
+
+
+const fs = require('fs').promises;
+const path = require('path');
+
+const USERS_JSON_FILE = path.join(__dirname, 'users.json');
+
 async function getAllUsers(instanceUrl, sessionCookie) {
+  // First check in-memory cache
   if (userDataCache) return userDataCache;
 
   try {
+    // Try to read from JSON file
+    const usersFromFile = await readUsersFromFile();
+    if (usersFromFile && usersFromFile.length > 0) {
+      console.log(`Loaded ${usersFromFile.length} users from JSON file`);
+      userDataCache = usersFromFile;
+      return usersFromFile;
+    }
+
+    // If no file or empty file, fetch from API
+    console.log('JSON file not found or empty, fetching from API...');
     let allUsers = [];
     let pageNumber = 1;
 
@@ -156,23 +174,82 @@ async function getAllUsers(instanceUrl, sessionCookie) {
       pageNumber++;
     }
 
+    console.log(`Total users fetched: ${allUsers.length}`);
+    
+    // Save to JSON file
+    await saveUsersToFile(allUsers);
+    
+    // Cache in memory
     userDataCache = allUsers;
     return allUsers;
+
   } catch (error) {
     console.error('Error fetching all users:', error.message);
     return [];
   }
 }
 
-async function getAllCompanies(instanceUrl, sessionCookie) {
-  if (companyDataCache) return companyDataCache;
-  
+async function readUsersFromFile() {
   try {
+    const fileExists = await fs.access(USERS_JSON_FILE).then(() => true).catch(() => false);
+    
+    if (!fileExists) {
+      console.log('Users JSON file does not exist');
+      return null;
+    }
+
+    const fileContent = await fs.readFile(USERS_JSON_FILE, 'utf8');
+    const users = JSON.parse(fileContent);
+    
+    return users;
+  } catch (error) {
+    console.error('Error reading users from file:', error.message);
+    return null;
+  }
+}
+
+async function saveUsersToFile(users) {
+  try {
+    const jsonData = JSON.stringify(users, null, 2);
+    await fs.writeFile(USERS_JSON_FILE, jsonData, 'utf8');
+    console.log(`Successfully saved ${users.length} users to ${USERS_JSON_FILE}`);
+  } catch (error) {
+    console.error('Error saving users to file:', error.message);
+  }
+}
+
+// Optional: Function to clear the JSON cache
+async function clearUsersCache() {
+  try {
+    await fs.unlink(USERS_JSON_FILE);
+    userDataCache = null;
+    console.log('Users cache cleared');
+  } catch (error) {
+    console.error('Error clearing users cache:', error.message);
+  }
+}
+
+const COMPANIES_JSON_FILE = path.join(__dirname, 'companies.json');
+
+async function getAllCompanies(instanceUrl, sessionCookie) {
+  // First check in-memory cache
+  if (companyDataCache) return companyDataCache;
+
+  try {
+    // Try to read from JSON file
+    const companiesFromFile = await readCompaniesFromFile();
+    if (companiesFromFile && companiesFromFile.length > 0) {
+      console.log(`Loaded ${companiesFromFile.length} companies from JSON file`);
+      companyDataCache = companiesFromFile;
+      return companiesFromFile;
+    }
+
+    // If no file or empty file, fetch from API
+    console.log('JSON file not found or empty, fetching from API...');
     let allCompanies = [];
     let pageNumber = 1;
-    let hasMore = true;
 
-    while (hasMore) {
+    while (true) {
       const response = await axios.post(
         `${instanceUrl}/v1/dataops/gdm/list?object=Company`,
         {
@@ -190,23 +267,71 @@ async function getAllCompanies(instanceUrl, sessionCookie) {
         }
       );
 
-      const companies = response.data.data.data || [];
+      const companies = response.data?.data?.data || [];
+      console.log(`Page ${pageNumber} fetched with ${companies.length} companies.`);
+
+      if (companies.length === 0) {
+        break; // Exit loop if no more companies
+      }
+
       allCompanies = [...allCompanies, ...companies];
-      
-      // Check if there are more pages
-      const totalRecords = response.data.data.totalRecords;
-      hasMore = (pageNumber * 200) < totalRecords;
       pageNumber++;
     }
 
+    console.log(`Total companies fetched: ${allCompanies.length}`);
+    
+    // Save to JSON file
+    await saveCompaniesToFile(allCompanies);
+    
+    // Cache in memory
     companyDataCache = allCompanies;
     return allCompanies;
+
   } catch (error) {
     console.error('Error fetching all companies:', error.message);
     return [];
   }
 }
 
+async function readCompaniesFromFile() {
+  try {
+    const fileExists = await fs.access(COMPANIES_JSON_FILE).then(() => true).catch(() => false);
+    
+    if (!fileExists) {
+      console.log('Companies JSON file does not exist');
+      return null;
+    }
+
+    const fileContent = await fs.readFile(COMPANIES_JSON_FILE, 'utf8');
+    const companies = JSON.parse(fileContent);
+    
+    return companies;
+  } catch (error) {
+    console.error('Error reading companies from file:', error.message);
+    return null;
+  }
+}
+
+async function saveCompaniesToFile(companies) {
+  try {
+    const jsonData = JSON.stringify(companies, null, 2);
+    await fs.writeFile(COMPANIES_JSON_FILE, jsonData, 'utf8');
+    console.log(`Successfully saved ${companies.length} companies to ${COMPANIES_JSON_FILE}`);
+  } catch (error) {
+    console.error('Error saving companies to file:', error.message);
+  }
+}
+
+// Optional: Function to clear the JSON cache
+async function clearCompaniesCache() {
+  try {
+    await fs.unlink(COMPANIES_JSON_FILE);
+    companyDataCache = null;
+    console.log('Companies cache cleared');
+  } catch (error) {
+    console.error('Error clearing companies cache:', error.message);
+  }
+}
 async function getAllActivityTypes(instanceUrl, sessionToken, cacheKey, companyId) {
   const cache = cacheKey === 'source' ? sourceActivityTypesCache : targetActivityTypesCache;
   if (cache) return cache;
@@ -222,13 +347,13 @@ async function getAllActivityTypes(instanceUrl, sessionToken, cacheKey, companyI
 
     const response = await axios(config);
     const activityTypes = response?.data?.data?.activityTypes || [];
-    
+
     if (cacheKey === 'source') {
       sourceActivityTypesCache = activityTypes;
     } else {
       targetActivityTypesCache = activityTypes;
     }
-    
+
     return activityTypes;
   } catch (error) {
     console.error(`Error fetching activity types for ${cacheKey}:`, error.message);
@@ -250,6 +375,7 @@ async function getUserIdByEmail(email, instanceUrl, sessionCookie) {
 async function getCompanyIdByName(companyName, instanceUrl, sessionCookie) {
   try {
     const companies = await getAllCompanies(instanceUrl, sessionCookie);
+    console.log(companies,"companies")
     const company = companies.find(c => c.Name?.toLowerCase() === companyName.toLowerCase());
     return company ? company.Gsid : "";
   } catch (error) {
@@ -291,7 +417,7 @@ async function createDraft(draftPayload, targetInstanceUrl, targetInstanceToken)
       data: JSON.stringify(draftPayload),
       maxBodyLength: Infinity
     });
-    
+
     console.log(response?.data, "yuva899");
     return response?.data?.data?.id || null;
   } catch (err) {
@@ -304,16 +430,17 @@ async function createDraft(draftPayload, targetInstanceUrl, targetInstanceToken)
 async function processTimelineEntry(entry, userCache, companyCache, activityCache, targetInstanceUrl, targetInstanceToken, sourceInstanceUrl, sourceInstanceToken) {
   try {
     console.log('Processing entry:', entry.id || 'unknown');
-    
+
     // Handle user cache
     let userId;
     const authorEmail = entry.author?.email;
-
+console.log(authorEmail,"author")
     if (authorEmail) {
       if (userCache[authorEmail]) {
         userId = userCache[authorEmail];
       } else {
         userId = await getUserIdByEmail(authorEmail, targetInstanceUrl, targetInstanceToken);
+        console.log(userId,"userId")
         userCache[authorEmail] = userId;
       }
     }
@@ -321,11 +448,14 @@ async function processTimelineEntry(entry, userCache, companyCache, activityCach
     // Handle company cache
     let companyId;
     const companyLabel = entry.contexts?.[0]?.lbl;
+    console.log(companyLabel,"companyLabel")
     if (companyLabel) {
       if (companyCache[companyLabel]) {
         companyId = companyCache[companyLabel];
       } else {
         companyId = await getCompanyIdByName(companyLabel, targetInstanceUrl, targetInstanceToken);
+         console.log(companyId,"companyId")
+
         companyCache[companyLabel] = companyId;
       }
     }
@@ -349,7 +479,7 @@ async function processTimelineEntry(entry, userCache, companyCache, activityCach
         activityCache[sourceActivityTypeId] = activityTypeId;
       }
     }
-console.log(entry.note?.customFields?.internalAttendees, "entry.note?.customFields?.internalAttendees");
+    console.log(entry.note?.customFields?.internalAttendees, "entry.note?.customFields?.internalAttendees");
     const ModifiedInternalId = (entry.note?.customFields?.internalAttendees || []).map(att => ({
       ...att,
       id: userId,
@@ -390,7 +520,7 @@ console.log(entry.note?.customFields?.internalAttendees, "entry.note?.customFiel
         notesTemplateId: null
       },
       author: {
-        id: '1P01E316G9DAPFOLE6V9Z586JRYFUW88XLGG',
+        id: '1P010RM8DTS76UHHN4XY38M7XP5JT5JZS7IV',
         obj: "User",
         name: entry.author?.name,
         email: entry.author?.email,
@@ -418,7 +548,7 @@ console.log(entry.note?.customFields?.internalAttendees, "entry.note?.customFiel
         }
       ]
     };
-console.dir(draftPayload, { depth: null });
+    console.dir(draftPayload, { depth: null });
     console.log("draftPayload");
 
     const draftId = await createDraft(draftPayload, targetInstanceUrl, targetInstanceToken);
@@ -452,35 +582,37 @@ console.dir(draftPayload, { depth: null });
 // Improved batch processing function
 async function processBatch(batch, userCache, companyCache, activityCache, targetInstanceUrl, targetInstanceToken, sourceInstanceUrl, sourceInstanceToken) {
   const results = [];
-  
+
   // Process items in batch sequentially to avoid overwhelming the API
   for (const entry of batch) {
     try {
+      console.log(entry,"entry")
       const result = await processTimelineEntry(
-        entry, 
-        userCache, 
-        companyCache, 
+        entry,
+        userCache,
+        companyCache,
         activityCache,
-        targetInstanceUrl, 
-        targetInstanceToken, 
-        sourceInstanceUrl, 
+        targetInstanceUrl,
+        targetInstanceToken,
+        sourceInstanceUrl,
         sourceInstanceToken
       );
       results.push(result);
-      
+
       // Small delay between each entry to prevent rate limiting
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
     } catch (error) {
+      console.log(error)
       console.error(`Failed to process entry ${entry.id}:`, error.message);
-      results.push({ 
-        success: false, 
-        reason: error.message, 
-        entryId: entry.id 
+      results.push({
+        success: false,
+        reason: error.message,
+        entryId: entry.id
       });
     }
   }
-  
+
   return results;
 }
 
@@ -496,56 +628,56 @@ exports.migrateTimelines = async (req, res) => {
 
     let allContent = [];
     let page = 0;
-    const size = 50; // Reduced batch size for more stable fetching
+    const size = 7; // Reduced batch size for more stable fetching
 
     // Fetch all timelines with error handling
     console.log('Fetching timeline data...');
-    while (true) {
-      try {
-        const url = `${sourceInstanceUrl}/v1/ant/timeline/search/activity?page=${page}&size=${size}`;
-        const payload = {
-          quickSearch: {},
-          contextFilter: {},
-          filterContext: "GLOBAL_TIMELINE"
-        };
+    // while (true) {
+    try {
+      const url = `${sourceInstanceUrl}/v1/ant/timeline/search/activity?page=${page}&size=${size}`;
+      const payload = {
+        quickSearch: {},
+        contextFilter: {},
+        filterContext: "GLOBAL_TIMELINE"
+      };
 
-        const config = {
-          method: 'post',
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            'Cookie': sourceInstanceToken
-          },
-          data: JSON.stringify(payload),
-          maxBodyLength: Infinity
-        };
+      const config = {
+        method: 'post',
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': sourceInstanceToken
+        },
+        data: JSON.stringify(payload),
+        maxBodyLength: Infinity
+      };
 
-        const response = await axios(config);
-        const content = response?.data?.data?.content || [];
+      const response = await axios(config);
+      const content = response?.data?.data?.content || [];
 
-        allContent = [...allContent, ...content];
+      allContent = [...allContent, ...content];
 
-        const totalPages = response?.data?.data?.page?.totalPages;
-        const currentPage = response?.data?.data?.page?.number;
+      const totalPages = response?.data?.data?.page?.totalPages;
+      const currentPage = response?.data?.data?.page?.number;
 
-        console.log(`Fetched page ${currentPage + 1}/${totalPages}, items: ${content.length}`);
+      console.log(`Fetched page ${currentPage + 1}/${totalPages}, items: ${content.length}`);
 
-        if (content.length === 0 || currentPage + 1 >= totalPages) break;
-        page++;
-        
-        // Add delay between page fetches
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-      } catch (error) {
-        console.error(`Error fetching page ${page}:`, error.message);
-        break; // Stop fetching on error
-      }
+      // if (content.length === 0 || currentPage + 1 >= totalPages) break;
+      page++;
+
+      // Add delay between page fetches
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+    } catch (error) {
+      console.error(`Error fetching page ${page}:`, error.message);
+      // break; // Stop fetching on error
     }
+    // }
 
     console.log(`Total timeline entries to migrate: ${allContent.length}`);
 
     if (allContent.length === 0) {
-      return res.status(200).json({ 
+      return res.status(200).json({
         message: "No timeline entries found to migrate",
         totalProcessed: 0,
         successful: 0,
@@ -562,9 +694,9 @@ exports.migrateTimelines = async (req, res) => {
       ]);
     } catch (error) {
       console.error('Error pre-loading reference data:', error.message);
-      return res.status(500).json({ 
-        message: "Failed to load reference data", 
-        error: error.message 
+      return res.status(500).json({
+        message: "Failed to load reference data",
+        error: error.message
       });
     }
 
@@ -576,7 +708,7 @@ exports.migrateTimelines = async (req, res) => {
     // Process with improved batch handling
     const BATCH_SIZE = 3; // Smaller batch size for better stability
     const batches = [];
-    
+
     for (let i = 0; i < allContent.length; i += BATCH_SIZE) {
       batches.push(allContent.slice(i, i + BATCH_SIZE));
     }
@@ -596,15 +728,15 @@ exports.migrateTimelines = async (req, res) => {
         // Process the batch
         const batchResults = await processBatch(
           batch,
-          userCache, 
-          companyCache, 
+          userCache,
+          companyCache,
           activityCache,
-          targetInstanceUrl, 
-          targetInstanceToken, 
-          sourceInstanceUrl, 
+          targetInstanceUrl,
+          targetInstanceToken,
+          sourceInstanceUrl,
           sourceInstanceToken
         );
-        
+
         // Count results
         batchResults.forEach(result => {
           processedCount++;
@@ -620,12 +752,12 @@ exports.migrateTimelines = async (req, res) => {
         });
 
         console.log(`Batch ${batchIndex + 1} completed. Progress: ${processedCount}/${allContent.length} (${successCount} successful, ${failureCount} failed)`);
-        
+
         // Longer delay between batches to be gentle on the API
         if (batchIndex < batches.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
-        
+
       } catch (error) {
         console.error(`Error processing batch ${batchIndex + 1}:`, error.message);
         // Mark all items in this batch as failed
@@ -648,8 +780,8 @@ exports.migrateTimelines = async (req, res) => {
 
     console.log('Migration completed!');
 
-    const response = { 
-      message: "Migration completed", 
+    const response = {
+      message: "Migration completed",
       totalProcessed: allContent.length,
       successful: successCount,
       failed: failureCount,
@@ -672,16 +804,16 @@ exports.migrateTimelines = async (req, res) => {
 
   } catch (error) {
     console.error("Migration error:", error.message);
-    
+
     // Clear caches on error
     userDataCache = null;
     companyDataCache = null;
     sourceActivityTypesCache = null;
     targetActivityTypesCache = null;
-    
-    res.status(500).json({ 
-      message: "Error during migration", 
-      error: error.message 
+
+    res.status(500).json({
+      message: "Error during migration",
+      error: error.message
     });
   }
 };

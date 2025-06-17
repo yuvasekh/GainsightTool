@@ -234,7 +234,7 @@ async function createDraft(draftPayload, targetInstanceUrl, targetInstanceToken)
 }
 async function getActivityTypeIdByType(type, instanceUrl, sessionToken, cacheKey, companyId) {
   const allActivityTypes = await getAllActivityTypes(instanceUrl, sessionToken, cacheKey, companyId);
-  // console.log(allActivityTypes, "allActivityTypes");
+  console.log(allActivityTypes.name, "allActivityTypes");
   // console.log(type, "type");
   const matched = allActivityTypes.find(
     activityType => activityType.name?.toLowerCase() === type.toLowerCase()
