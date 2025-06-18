@@ -114,17 +114,81 @@ exports.CompanyTimeLine = async (req, res) => {
 };
 
 
-// Optimized helper functions with caching
-let userDataCache = null;
-let companyDataCache = null;
-let sourceActivityTypesCache = null;
-let targetActivityTypesCache = null;
 
 
 
 const fs = require('fs').promises;
 const path = require('path');
+const ACTIVITY_TYPE_MAPPING = [
+  { "Old Verizon Activity Type Name": "3G At-Risk Migration Update", "Activity Type": "Update", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "3G Migration Update", "Activity Type": "Update", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "Admin Agent Update", "Activity Type": "Update", "Sub-Activity Type": "Admin Agent Update" },
+  { "Old Verizon Activity Type Name": "Admin Intake Form", "Activity Type": "Update", "Sub-Activity Type": "Admin Intake Form" },
+  { "Old Verizon Activity Type Name": "Adoption Discussion", "Activity Type": "Update", "Sub-Activity Type": "Adoption Discussion" },
+  { "Old Verizon Activity Type Name": "At-Risk Customer Update", "Activity Type": "Update", "Sub-Activity Type": "At-Risk Customer Update" },
+  { "Old Verizon Activity Type Name": "Call", "Activity Type": "Call", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "Cancellation Request", "Activity Type": "Cancellation Request", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "CRT/PRM Update", "Activity Type": "Update", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "CST - Adoption", "Activity Type": "Update", "Sub-Activity Type": "CST - Adoption" },
+  { "Old Verizon Activity Type Name": "CST - Revenue Generating", "Activity Type": "Update", "Sub-Activity Type": "CST - Revenue Generating" },
+  { "Old Verizon Activity Type Name": "CST - RYG", "Activity Type": "Update", "Sub-Activity Type": "CST - RYG" },
+  { "Old Verizon Activity Type Name": "Customer Note", "Activity Type": "Update", "Sub-Activity Type": "Customer Note" },
+  { "Old Verizon Activity Type Name": "EBR", "Activity Type": "Meeting", "Sub-Activity Type": "EBR" },
+  { "Old Verizon Activity Type Name": "Email", "Activity Type": "Email", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "EST Update", "Activity Type": "Update", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "Ex-Customer Update", "Activity Type": "Update", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "Gov Cancellation Request", "Activity Type": "Update", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "Internal", "Activity Type": "Update", "Sub-Activity Type": "Internal" },
+  { "Old Verizon Activity Type Name": "Meeting", "Activity Type": "Meeting", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "Milestone", "Activity Type": "Milestone", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "Predictive Churn", "Activity Type": "Update", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "QBR", "Activity Type": "Meeting", "Sub-Activity Type": "QBR" },
+  { "Old Verizon Activity Type Name": "Renewal Update", "Activity Type": "Update", "Sub-Activity Type": "Renewal Update" },
+  { "Old Verizon Activity Type Name": "Save-a-thon Campaign Activity", "Activity Type": "Update", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "SSD Close Out", "Activity Type": "Update", "Sub-Activity Type": "SSD Close Out" },
+  { "Old Verizon Activity Type Name": "Test", "Activity Type": "Update", "Sub-Activity Type": "" },
+  { "Old Verizon Activity Type Name": "Update", "Activity Type": "Update", "Sub-Activity Type": "" }
+];
 
+// 📋 EXACT Milestone Type Mapping JSON (Your Business Logic - 22 mappings)
+const MILESTONE_TYPE_MAPPING = [
+  { "Old Milestone Type": "Adopting", "New Milestone Type": "Adopting" },
+  { "Old Milestone Type": "CSM Assigned", "New Milestone Type": "CSM Transition" },
+  { "Old Milestone Type": "CSM Transition", "New Milestone Type": "CSM Transition" },
+  { "Old Milestone Type": "CSM Updates", "New Milestone Type": "CSM Updates" },
+  { "Old Milestone Type": "Executive Business Review", "New Milestone Type": "Executive Business Review" },
+  { "Old Milestone Type": "Expansion Opportunity Identified", "New Milestone Type": "Expansion Opportunity Identified" },
+  { "Old Milestone Type": "Expansion Opportunity Won", "New Milestone Type": "Expansion Opportunity Won" },
+  { "Old Milestone Type": "Health status -> Red", "New Milestone Type": "Risk Identified" },
+  { "Old Milestone Type": "Launched", "New Milestone Type": "Launched" },
+  { "Old Milestone Type": "Lifecycle Event Completed", "New Milestone Type": "Lifecycle Event Completed" },
+  { "Old Milestone Type": "Objective Completed", "New Milestone Type": "Objective Completed" },
+  { "Old Milestone Type": "Objective Created", "New Milestone Type": "Objective Created" },
+  { "Old Milestone Type": "Onboarding Complete", "New Milestone Type": "Onboarding Complete" },
+  { "Old Milestone Type": "Onboarding Kick-Off", "New Milestone Type": "Kicked Off" },
+  { "Old Milestone Type": "Onboarding Started", "New Milestone Type": "Onboarding Started" },
+  { "Old Milestone Type": "Predictive Churn Model", "New Milestone Type": "Will Churn" },
+  { "Old Milestone Type": "Reference", "New Milestone Type": "Provided Reference" },
+  { "Old Milestone Type": "Risk Identified", "New Milestone Type": "Risk Identified" },
+  { "Old Milestone Type": "Risk Resolved", "New Milestone Type": "Risk Resolved" },
+  { "Old Milestone Type": "Training", "New Milestone Type": "Training" },
+  { "Old Milestone Type": "Upcoming Renewal", "New Milestone Type": "Lifecycle Event Created" },
+  { "Old Milestone Type": "Will Churn", "New Milestone Type": "Will Churn" }
+];
+
+// 🔍 Global Cache Variables
+let userDataCache = null;
+let companyDataCache = null;
+let sourceActivityTypesCache = null;
+let targetActivityTypesCache = null;
+let subActivityTypesCache = null;
+let meetingSubTypesCache = null;
+let sourceMilestoneTypesCache = null;
+let targetMilestoneTypesCache = null;
+function normalizeString(str) {
+  if (!str) return '';
+  return str.toString().toLowerCase().trim().replace(/\s+/g, ' ');
+}
 const USERS_JSON_FILE = path.join(__dirname, 'users.json');
 
 async function getAllUsers(instanceUrl, sessionCookie) {
@@ -175,10 +239,10 @@ async function getAllUsers(instanceUrl, sessionCookie) {
     }
 
     console.log(`Total users fetched: ${allUsers.length}`);
-    
+
     // Save to JSON file
     await saveUsersToFile(allUsers);
-    
+
     // Cache in memory
     userDataCache = allUsers;
     return allUsers;
@@ -192,7 +256,7 @@ async function getAllUsers(instanceUrl, sessionCookie) {
 async function readUsersFromFile() {
   try {
     const fileExists = await fs.access(USERS_JSON_FILE).then(() => true).catch(() => false);
-    
+
     if (!fileExists) {
       console.log('Users JSON file does not exist');
       return null;
@@ -200,7 +264,7 @@ async function readUsersFromFile() {
 
     const fileContent = await fs.readFile(USERS_JSON_FILE, 'utf8');
     const users = JSON.parse(fileContent);
-    
+
     return users;
   } catch (error) {
     console.error('Error reading users from file:', error.message);
@@ -279,10 +343,10 @@ async function getAllCompanies(instanceUrl, sessionCookie) {
     }
 
     console.log(`Total companies fetched: ${allCompanies.length}`);
-    
+
     // Save to JSON file
     await saveCompaniesToFile(allCompanies);
-    
+
     // Cache in memory
     companyDataCache = allCompanies;
     return allCompanies;
@@ -296,7 +360,7 @@ async function getAllCompanies(instanceUrl, sessionCookie) {
 async function readCompaniesFromFile() {
   try {
     const fileExists = await fs.access(COMPANIES_JSON_FILE).then(() => true).catch(() => false);
-    
+
     if (!fileExists) {
       console.log('Companies JSON file does not exist');
       return null;
@@ -304,7 +368,7 @@ async function readCompaniesFromFile() {
 
     const fileContent = await fs.readFile(COMPANIES_JSON_FILE, 'utf8');
     const companies = JSON.parse(fileContent);
-    
+
     return companies;
   } catch (error) {
     console.error('Error reading companies from file:', error.message);
@@ -340,9 +404,8 @@ async function getAllActivityTypes(instanceUrl, sessionToken, cacheKey, companyI
     const config = {
       method: 'get',
       url: `${instanceUrl}/v1/ant/forms?context=Company&contextId=${companyId}&showHidden=false`,
-      headers: {
-        'Cookie': sessionToken
-      }
+      headers: { 'Cookie': sessionToken },
+      timeout: 30000
     };
 
     const response = await axios(config);
@@ -354,10 +417,244 @@ async function getAllActivityTypes(instanceUrl, sessionToken, cacheKey, companyI
       targetActivityTypesCache = activityTypes;
     }
 
+    console.log(`Loaded ${activityTypes.length} activity types for ${cacheKey} system`);
     return activityTypes;
   } catch (error) {
     console.error(`Error fetching activity types for ${cacheKey}:`, error.message);
     return [];
+  }
+}
+async function getSubActivityTypes(targetInstanceUrl, targetInstanceToken) {
+  if (subActivityTypesCache) return subActivityTypesCache;
+
+  try {
+    const config = {
+      method: 'get',
+      url: `${targetInstanceUrl}/v1/ant/picklist/items/category/?ct=&id=1I00FBWECOTNM4VRRNBF3A8R43VMLERUJJFA&ref=`,
+      headers: { 'Cookie': targetInstanceToken },
+      timeout: 30000
+    };
+
+    const response = await axios(config);
+    const subActivityTypes = response?.data?.data || [];
+
+    subActivityTypesCache = subActivityTypes;
+    console.log(`Loaded ${subActivityTypes.length} sub-activity types`);
+    return subActivityTypes;
+  } catch (error) {
+    console.error('Error fetching sub-activity types:', error.message);
+    return [];
+  }
+}
+
+async function getMeetingSubTypes(targetInstanceUrl, targetInstanceToken) {
+  if (meetingSubTypesCache) return meetingSubTypesCache;
+
+  try {
+    const config = {
+      method: 'get',
+      url: `${targetInstanceUrl}/v1/ant/picklist/items/category/?ct=&id=1I006DLKSIHRNJRYD2GHLL86BRHBL4WOY5U4&ref=`,
+      headers: { 'Cookie': targetInstanceToken },
+      timeout: 30000
+    };
+
+    const response = await axios(config);
+    const meetingSubTypes = response?.data?.data || [];
+
+    meetingSubTypesCache = meetingSubTypes;
+    console.log(`Loaded ${meetingSubTypes.length} meeting sub-types`);
+    return meetingSubTypes;
+  } catch (error) {
+    console.error('Error fetching meeting sub-types:', error.message);
+    return [];
+  }
+}
+
+async function getAdvancedActivityMapping(oldActivityTypeName, targetInstanceUrl, targetInstanceToken, sourceInstanceUrl, sourceInstanceToken, companyId) {
+  try {
+    console.log(`🔍 Mapping activity type: "${oldActivityTypeName}"`);
+
+    const mapping = ACTIVITY_TYPE_MAPPING.find(m =>
+      normalizeString(m["Old Verizon Activity Type Name"]) === normalizeString(oldActivityTypeName)
+    );
+
+    if (!mapping) {
+      console.warn(`⚠️ No mapping found for "${oldActivityTypeName}"`);
+      return { activityTypeId: null, subActivityTypeId: null };
+    }
+
+    console.log(`📋 Found mapping: ${oldActivityTypeName} → ${mapping["Activity Type"]} / ${mapping["Sub-Activity Type"] || 'None'}`);
+
+    const [targetActivityTypes, subActivityTypes, meetingSubTypes] = await Promise.all([
+      getAllActivityTypes(targetInstanceUrl, targetInstanceToken, 'target', companyId),
+      getSubActivityTypes(targetInstanceUrl, targetInstanceToken),
+      getMeetingSubTypes(targetInstanceUrl, targetInstanceToken)
+    ]);
+
+    const targetActivityType = targetActivityTypes.find(type =>
+      normalizeString(type.name) === normalizeString(mapping["Activity Type"])
+    );
+
+    if (!targetActivityType) {
+      console.error(`❌ Activity type "${mapping["Activity Type"]}" not found in target system`);
+      return { activityTypeId: null, subActivityTypeId: null };
+    }
+
+    console.log(`✅ Found main activity type: ${targetActivityType.name} (ID: ${targetActivityType.id})`);
+
+    let subActivityTypeId = null;
+
+    if (mapping["Sub-Activity Type"] && mapping["Sub-Activity Type"].trim() !== "") {
+      const subActivityName = mapping["Sub-Activity Type"];
+
+      if (normalizeString(mapping["Activity Type"]) === "meeting") {
+        console.log(`🔍 Looking for meeting sub-type: "${subActivityName}"`);
+       
+        const meetingSubType = meetingSubTypes.find(type =>
+          normalizeString(type.label) === normalizeString(subActivityName)
+        );
+
+        if (meetingSubType) {
+          subActivityTypeId = meetingSubType.id;
+          console.log(`✅ Found meeting sub-type: ${meetingSubType.label} (ID: ${subActivityTypeId})`);
+        } else {
+          console.warn(`⚠️ Meeting sub-type "${subActivityName}" not found`);
+        }
+      } else {
+        console.log(`🔍 Looking for sub-activity type: "${subActivityName}"`);
+       
+        const subActivityType = subActivityTypes.find(type =>
+          normalizeString(type.label) === normalizeString(subActivityName)
+        );
+
+        if (subActivityType) {
+          subActivityTypeId = subActivityType.id;
+          console.log(`✅ Found sub-activity type: ${subActivityType.label} (ID: ${subActivityTypeId})`);
+        } else {
+          console.warn(`⚠️ Sub-activity type "${subActivityName}" not found`);
+        }
+      }
+    }
+
+    return {
+      activityTypeId: targetActivityType.id,
+      subActivityTypeId: subActivityTypeId,
+      activityTypeName: targetActivityType.name,
+      subActivityTypeName: mapping["Sub-Activity Type"] || null
+    };
+
+  } catch (error) {
+    console.error('Error in advanced activity mapping:', error.message);
+    return { activityTypeId: null, subActivityTypeId: null };
+  }
+}
+
+// 🏁 MILESTONE TYPE FUNCTIONS
+
+async function getSourceMilestoneTypes(sourceInstanceUrl, sourceInstanceToken, companyId) {
+  if (sourceMilestoneTypesCache) return sourceMilestoneTypesCache;
+
+  try {
+    const config = {
+      method: 'get',
+      url: `${sourceInstanceUrl}/v1/ant/picklist/items/by/Company?cid=${companyId}&ct=MILESTONE&id=&ref=SCRIBBLE`,
+      headers: { 'Cookie': sourceInstanceToken },
+      timeout: 30000
+    };
+
+    const response = await axios(config);
+    const milestoneTypes = response?.data?.data || [];
+
+    sourceMilestoneTypesCache = milestoneTypes;
+    console.log(`Loaded ${milestoneTypes.length} milestone types from SOURCE system`);
+    return milestoneTypes;
+  } catch (error) {
+    console.error('Error fetching source milestone types:', error.message);
+    return [];
+  }
+}
+
+async function getTargetMilestoneTypes(targetInstanceUrl, targetInstanceToken, companyId) {
+  if (targetMilestoneTypesCache) return targetMilestoneTypesCache;
+
+  try {
+    const config = {
+      method: 'get',
+      url: `${targetInstanceUrl}/v1/ant/picklist/items/by/Company?cid=${companyId}&ct=MILESTONE&id=&ref=SCRIBBLE`,
+      headers: { 'Cookie': targetInstanceToken },
+      timeout: 30000
+    };
+
+    const response = await axios(config);
+    const milestoneTypes = response?.data?.data || [];
+
+    targetMilestoneTypesCache = milestoneTypes;
+    console.log(`Loaded ${milestoneTypes.length} milestone types from TARGET system`);
+    return milestoneTypes;
+  } catch (error) {
+    console.error('Error fetching target milestone types:', error.message);
+    return [];
+  }
+}
+
+async function getMilestoneTypeMapping(oldMilestoneTypeId, sourceInstanceUrl, sourceInstanceToken, targetInstanceUrl, targetInstanceToken, sourceCompanyId, targetCompanyId) {
+  try {
+    console.log(`🔍 Mapping milestone type ID: "${oldMilestoneTypeId}"`);
+
+    if (!oldMilestoneTypeId || oldMilestoneTypeId.trim() === '') {
+      console.warn('⚠️ No milestone type ID provided');
+      return null;
+    }
+
+    const [sourceMilestoneTypes, targetMilestoneTypes] = await Promise.all([
+      getSourceMilestoneTypes(sourceInstanceUrl, sourceInstanceToken, sourceCompanyId),
+      getTargetMilestoneTypes(targetInstanceUrl, targetInstanceToken, targetCompanyId)
+    ]);
+
+    const sourceMilestoneType = sourceMilestoneTypes.find(type => type.id === oldMilestoneTypeId);
+    if (!sourceMilestoneType) {
+      console.error(`❌ Old milestone type ID not found: "${oldMilestoneTypeId}"`);
+      return null;
+    }
+
+    const oldMilestoneLabel = sourceMilestoneType.label;
+    console.log(`✅ Found old milestone type: "${oldMilestoneLabel}" (ID: ${oldMilestoneTypeId})`);
+
+    const mapping = MILESTONE_TYPE_MAPPING.find(m =>
+      normalizeString(m["Old Milestone Type"]) === normalizeString(oldMilestoneLabel)
+    );
+
+    if (!mapping) {
+      console.error(`❌ No business logic mapping found for: "${oldMilestoneLabel}"`);
+      return null;
+    }
+
+    const newMilestoneLabel = mapping["New Milestone Type"];
+    console.log(`✅ Found business logic mapping: "${oldMilestoneLabel}" → "${newMilestoneLabel}"`);
+
+    const targetMilestoneType = targetMilestoneTypes.find(type =>
+      normalizeString(type.label) === normalizeString(newMilestoneLabel)
+    );
+
+    if (!targetMilestoneType) {
+      console.error(`❌ New milestone type not found in target system: "${newMilestoneLabel}"`);
+      return null;
+    }
+
+    const newMilestoneTypeId = targetMilestoneType.id;
+    console.log(`✅ Found new milestone type: "${targetMilestoneType.label}" (ID: ${newMilestoneTypeId})`);
+
+    return {
+      oldMilestoneTypeId: oldMilestoneTypeId,
+      oldMilestoneLabel: oldMilestoneLabel,
+      newMilestoneLabel: targetMilestoneType.label,
+      newMilestoneTypeId: newMilestoneTypeId,
+      mappingRule: `"${oldMilestoneLabel}" → "${newMilestoneLabel}"`
+    };
+
+  } catch (error) {
+    console.error('Error in milestone type mapping:', error.message);
+    return null;
   }
 }
 
@@ -375,7 +672,7 @@ async function getUserIdByEmail(email, instanceUrl, sessionCookie) {
 async function getCompanyIdByName(companyName, instanceUrl, sessionCookie) {
   try {
     const companies = await getAllCompanies(instanceUrl, sessionCookie);
-    console.log(companies,"companies")
+    // console.log(companies,"companies")
     const company = companies.find(c => c.Name?.toLowerCase() === companyName.toLowerCase());
     return company ? company.Gsid : "";
   } catch (error) {
@@ -384,27 +681,253 @@ async function getCompanyIdByName(companyName, instanceUrl, sessionCookie) {
   }
 }
 
-async function getActivityId(activityid, targetInstanceUrl, targetInstanceToken, sourceInstanceUrl, sourceInstanceToken) {
+
+const activityTypeMappings = require('./activityTypeMapping.json'); // your JSON mapping file
+
+async function getActivityId(
+  activityid,
+  targetInstanceUrl,
+  targetInstanceToken,
+  sourceInstanceUrl,
+  sourceInstanceToken
+) {
   try {
     const [sourceActivityTypes, targetActivityTypes] = await Promise.all([
       getAllActivityTypes(sourceInstanceUrl, sourceInstanceToken, 'source'),
       getAllActivityTypes(targetInstanceUrl, targetInstanceToken, 'target')
     ]);
 
-    console.log(activityid, "activityid");
+    console.log(sourceActivityTypes, "sourceActivityTypes");
+    console.log(targetActivityTypes, "targetActivityTypes");
+
+    await saveActivityTypesToJson(sourceActivityTypes, targetActivityTypes);
 
     const sourceActivity = sourceActivityTypes.find(type => type.id === activityid);
     if (!sourceActivity) return null;
 
-    const targetActivity = targetActivityTypes.find(type => type.name === sourceActivity.name);
-    console.log(targetActivity, "targetActivity");
-    return targetActivity ? targetActivity.id : null;
+    let foundInSubCategory = false;
+    let targetActivity = targetActivityTypes.find(type => type.name === sourceActivity.name);
+
+    let subCategoryId = null;
+    let mainCategoryName = null;
+
+    // If not found in regular activity types, check subcategory
+    if (!targetActivity) {
+      const subCategoryItem = await getSubCategoryByName(sourceActivity.name, targetInstanceUrl, targetInstanceToken);
+      if (subCategoryItem) {
+        foundInSubCategory = true;
+        subCategoryId = subCategoryItem.id;
+
+        // Find main category name from mapping
+        const match = activityTypeMappings.find(
+          item => item["Sub-Activity Type"] === sourceActivity.name
+        );
+        mainCategoryName = match?.MainCategory || null;
+        targetActivity = targetActivityTypes.find(type => type.name === mainCategoryName);
+      }
+    }
+
+    return {
+      id: targetActivity?.id || null,
+      subCategoryId: subCategoryId,
+      mainCategoryName: mainCategoryName
+    };
   } catch (error) {
     console.error(`Error getting activity ID:`, error.message);
     return null;
   }
 }
 
+async function getSubCategoryByName(name, instanceUrl, token) {
+  try {
+    const categoryId = '1I00127ZUZQS288U7Q0I0OI65NMXCF5KYKH2'; // Replace with dynamic if needed
+    const url = `${instanceUrl}/v1/ant/picklist/items/category/?ct=&id=${categoryId}&ref=`;
+
+    const response = await axios.get(url, {
+      headers: {
+        Cookie: `sid=${token}`
+      }
+    });
+
+    const item = response.data?.data?.find(entry => entry.label === name || entry.system_name === name);
+    return item || null;
+
+  } catch (err) {
+    console.error('Error fetching subcategory:', err.message);
+    return null;
+  }
+}
+
+
+async function saveActivityTypesToJson(sourceActivityTypes, targetActivityTypes) {
+  try {
+    // Create a directory for the JSON files if it doesn't exist
+    const outputDir = './activity-types';
+    await fs.mkdir(outputDir, { recursive: true });
+
+    // Save source activity types
+    const sourceFilePath = path.join(outputDir, 'sourceActivityTypes.json');
+    await fs.writeFile(sourceFilePath, JSON.stringify(sourceActivityTypes, null, 2));
+    console.log(`Source activity types saved to: ${sourceFilePath}`);
+
+    // Save target activity types
+    const targetFilePath = path.join(outputDir, 'targetActivityTypes.json');
+    await fs.writeFile(targetFilePath, JSON.stringify(targetActivityTypes, null, 2));
+    console.log(`Target activity types saved to: ${targetFilePath}`);
+
+    // Optionally, save both in a single file with metadata
+    const combinedData = {
+      timestamp: new Date().toISOString(),
+      sourceActivityTypes,
+      targetActivityTypes,
+      counts: {
+        source: sourceActivityTypes.length,
+        target: targetActivityTypes.length
+      }
+    };
+
+    const combinedFilePath = path.join(outputDir, 'combinedActivityTypes.json');
+    await fs.writeFile(combinedFilePath, JSON.stringify(combinedData, null, 2));
+    console.log(`Combined activity types saved to: ${combinedFilePath}`);
+
+  } catch (error) {
+    console.error('Error saving activity types to JSON:', error.message);
+  }
+}
+async function downloadAttachment(attachmentUrl, attachmentName) {
+  try {
+    const response = await axios({
+      method: 'GET',
+      url: attachmentUrl,
+      responseType: 'arraybuffer'
+    });
+
+    return {
+      buffer: response.data,
+      name: attachmentName,
+      contentType: response.headers['content-type'] || 'application/octet-stream'
+    };
+  } catch (error) {
+    console.error(`Error downloading attachment ${attachmentName}:`, error.message);
+    throw error;
+  }
+}
+async function uploadAttachment(attachmentData, companyId, companyLabel, userId, userName, userEmail, targetInstanceUrl, targetInstanceToken) {
+  try {
+    const FormData = require('form-data');
+    const form = new FormData();
+    console.log(attachmentData, "attachmentData")
+    // Add the file buffer
+    form.append('file', attachmentData.buffer, {
+      filename: attachmentData.name,
+      contentType: attachmentData.contentType
+    });
+
+    // Prepare the request string payload
+    const requestPayload = {
+      entityId: null,
+      contexts: [{
+        id: companyId,
+        obj: "Company",
+        eobj: "Account",
+        eid: null,
+        esys: "SALESFORCE",
+        lbl: companyLabel,
+        dsp: true,
+        base: true
+      }],
+      source: "C360",
+      user: {
+        id: userId,
+        obj: "User",
+        name: userName,
+        email: userEmail,
+        eid: null,
+        eobj: "User",
+        epp: null,
+        esys: "SALESFORCE",
+        sys: "GAINSIGHT",
+        pp: ""
+      },
+      type: "DEFAULT"
+    };
+
+    form.append('requestString', JSON.stringify(requestPayload));
+
+    const config = {
+      method: 'post',
+      url: `${targetInstanceUrl}/v1/ant/attachments`,
+      headers: {
+        'Cookie': targetInstanceToken,
+        ...form.getHeaders()
+      },
+      data: form,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity
+    };
+
+    const response = await axios(config);
+    // console.log(response.data,"yuva")
+    return response.data.data;
+
+  } catch (error) {
+    console.error(`Error uploading attachment ${attachmentData.name}:`, error.message);
+    throw error;
+  }
+}
+async function processAttachments(attachments, companyId, companyLabel, userId, userName, userEmail, targetInstanceUrl, targetInstanceToken) {
+  const uploadedAttachments = [];
+
+  for (const attachment of attachments) {
+    try {
+      console.log(`Processing attachment: ${attachment.name}`);
+
+      // Download attachment from source
+      const attachmentData = await downloadAttachment(attachment.url, attachment.name);
+
+      // Upload to target instance
+      const uploadResult = await uploadAttachment(
+        attachmentData,
+        companyId,
+        companyLabel,
+        userId,
+        userName,
+        userEmail,
+        targetInstanceUrl,
+        targetInstanceToken
+      );
+      console.log(uploadResult, "uploadResult")
+      // Transform the upload result to match the expected format
+      const processedAttachment = {
+        id: uploadResult.id || uploadResult.attachmentId,
+        seqId: uploadResult.seqId || attachment.seqId,
+        name: attachment.name,
+        url: uploadResult.url || attachment.url,
+        size: attachment.size,
+        removed: false,
+        published: true,
+        type: attachment.type,
+        createdDate: uploadResult.createdDate || new Date().toISOString(),
+        connectionId: null,
+        syncedToExtSys: false,
+        eid: null,
+        esys: null
+      };
+
+      uploadedAttachments.push(processedAttachment);
+      console.log(`Successfully uploaded attachment: ${attachment.name}`);
+
+      // Small delay between attachment uploads
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+    } catch (error) {
+      console.error(`Failed to process attachment ${attachment.name}:`, error.message);
+      // Continue with other attachments even if one fails
+    }
+  }
+
+  return uploadedAttachments;
+}
 async function createDraft(draftPayload, targetInstanceUrl, targetInstanceToken) {
   try {
     const response = await axios({
@@ -427,20 +950,29 @@ async function createDraft(draftPayload, targetInstanceUrl, targetInstanceToken)
 }
 
 // Helper function to process a single timeline entry with better error handling
-async function processTimelineEntry(entry, userCache, companyCache, activityCache, targetInstanceUrl, targetInstanceToken, sourceInstanceUrl, sourceInstanceToken) {
+async function processTimelineEntry(
+  entry,
+  userCache,
+  companyCache,
+  activityCache,
+  milestoneCache,
+  targetInstanceUrl,
+  targetInstanceToken,
+  sourceInstanceUrl,
+  sourceInstanceToken, sourceCompanyId,
+          targetCompanyId
+) {
   try {
     console.log('Processing entry:', entry.id || 'unknown');
 
     // Handle user cache
     let userId;
     const authorEmail = entry.author?.email;
-console.log(authorEmail,"author")
     if (authorEmail) {
       if (userCache[authorEmail]) {
         userId = userCache[authorEmail];
       } else {
         userId = await getUserIdByEmail(authorEmail, targetInstanceUrl, targetInstanceToken);
-        console.log(userId,"userId")
         userCache[authorEmail] = userId;
       }
     }
@@ -448,14 +980,11 @@ console.log(authorEmail,"author")
     // Handle company cache
     let companyId;
     const companyLabel = entry.contexts?.[0]?.lbl;
-    console.log(companyLabel,"companyLabel")
     if (companyLabel) {
       if (companyCache[companyLabel]) {
         companyId = companyCache[companyLabel];
       } else {
         companyId = await getCompanyIdByName(companyLabel, targetInstanceUrl, targetInstanceToken);
-         console.log(companyId,"companyId")
-
         companyCache[companyLabel] = companyId;
       }
     }
@@ -464,22 +993,88 @@ console.log(authorEmail,"author")
       return { success: false, reason: 'No company ID found', entryId: entry.id };
     }
 
-    console.log(entry.note?.subject, "entry.note?.subject");
-
-    // Handle activity type cache
-    let activityTypeId;
+    // Handle activity type and subcategory
+    let activityTypeId = null;
+    let subCategoryId = null;
     const sourceActivityTypeId = entry?.meta?.activityTypeId;
+    let activityMapping = { activityTypeId: null, subActivityTypeId: null };
+
     if (sourceActivityTypeId) {
-      if (activityCache[sourceActivityTypeId]) {
-        activityTypeId = activityCache[sourceActivityTypeId];
+      const cacheKey = `advanced_${sourceActivityTypeId}`;
+     
+      if (activityCache[cacheKey]) {
+        activityMapping = activityCache[cacheKey];
       } else {
-        console.log(entry?.meta?.activityTypeId, "entry?.meta?.activityTypeId");
-        activityTypeId = await getActivityId(sourceActivityTypeId, targetInstanceUrl, targetInstanceToken, sourceInstanceUrl, sourceInstanceToken);
-        console.log(activityTypeId, "activityTypeId");
-        activityCache[sourceActivityTypeId] = activityTypeId;
+        const sourceActivityTypes = await getAllActivityTypes(sourceInstanceUrl, sourceInstanceToken, 'source', sourceCompanyId);
+        const sourceActivity = sourceActivityTypes.find(type => type.id === sourceActivityTypeId);
+       
+        if (sourceActivity) {
+          console.log(`🔍 Source activity: ${sourceActivity.name} (ID: ${sourceActivityTypeId})`);
+         
+          activityMapping = await getAdvancedActivityMapping(
+            sourceActivity.name,
+            targetInstanceUrl,
+            targetInstanceToken,
+            sourceInstanceUrl,
+            sourceInstanceToken,
+            targetCompanyId
+          );
+         console.log(activityMapping,"activityMapping")
+          activityCache[cacheKey] = activityMapping;
+        } else {
+          console.error(`❌ Source activity type not found: ${sourceActivityTypeId}`);
+        }
       }
     }
-    console.log(entry.note?.customFields?.internalAttendees, "entry.note?.customFields?.internalAttendees");
+
+    // 🏁 Handle milestone type mapping (only for Milestone activities)
+    let milestoneMapping = null;
+    const oldMilestoneTypeId = entry?.note?.customFields?.milestoneType;
+
+    if (oldMilestoneTypeId && normalizeString(activityMapping?.activityTypeName) === 'milestone') {
+      console.log(`🏁 MILESTONE DETECTED: Processing milestone type mapping...`);
+     
+      const milestoneCacheKey = `milestone_${oldMilestoneTypeId}`;
+     
+      if (milestoneCache[milestoneCacheKey]) {
+        milestoneMapping = milestoneCache[milestoneCacheKey];
+      } else {
+        milestoneMapping = await getMilestoneTypeMapping(
+          oldMilestoneTypeId,
+          sourceInstanceUrl,
+          sourceInstanceToken,
+          targetInstanceUrl,
+          targetInstanceToken,
+          sourceCompanyId,
+          targetCompanyId
+        );
+       
+        milestoneCache[milestoneCacheKey] = milestoneMapping;
+       
+        if (milestoneMapping) {
+          console.log(`✅ Successfully mapped milestone: ${milestoneMapping.mappingRule}`);
+        }
+      }
+    }
+    // Process attachments
+    let processedAttachments = [];
+    if (entry.attachments && entry.attachments.length > 0) {
+      try {
+        processedAttachments = await processAttachments(
+          entry.attachments,
+          companyId,
+          companyLabel,
+          userId,
+          entry.author?.name,
+          entry.author?.email,
+          targetInstanceUrl,
+          targetInstanceToken
+        );
+      } catch (error) {
+        console.error(`Error processing attachments for entry ${entry.id}:`, error.message);
+      }
+    }
+
     const ModifiedInternalId = (entry.note?.customFields?.internalAttendees || []).map(att => ({
       ...att,
       id: userId,
@@ -487,6 +1082,23 @@ console.log(authorEmail,"author")
       email: att.email,
       userType: "USER"
     }));
+
+    // Build custom fields
+    const customFields = {
+      internalAttendees: ModifiedInternalId,
+      externalAttendees: []
+    };
+
+     if (activityMapping?.subActivityTypeId) {
+      customFields.Ant__Activity_Subtype__c = activityMapping.subActivityTypeId;
+      console.log(`✅ Added sub-activity type: ${activityMapping.subActivityTypeId}`);
+    }
+
+    // Add milestone type if properly mapped
+    if (milestoneMapping?.newMilestoneTypeId) {
+      customFields.milestoneType = milestoneMapping.newMilestoneTypeId;
+      console.log(`✅ Added milestone type: ${milestoneMapping.newMilestoneTypeId} (${milestoneMapping.mappingRule})`);
+    }
 
     const draftPayload = {
       lastModifiedByUser: {
@@ -497,10 +1109,7 @@ console.log(authorEmail,"author")
         pp: ""
       },
       note: {
-        customFields: {
-          internalAttendees: ModifiedInternalId,
-          externalAttendees: []
-        },
+        customFields,
         type: entry.note?.type,
         subject: entry.note?.subject,
         activityDate: entry.note?.activityDate,
@@ -511,7 +1120,7 @@ console.log(authorEmail,"author")
       mentions: [],
       relatedRecords: null,
       meta: {
-        activityTypeId: activityTypeId,
+        activityTypeId: activityMapping?.activityTypeId,
         ctaId: null,
         source: "GLOBAL_TIMELINE",
         hasTask: false,
@@ -533,7 +1142,7 @@ console.log(authorEmail,"author")
       },
       syncedToSFDC: false,
       tasks: [],
-      attachments: [],
+      attachments: processedAttachments,
       contexts: [
         {
           id: companyId,
@@ -548,16 +1157,13 @@ console.log(authorEmail,"author")
         }
       ]
     };
-    console.dir(draftPayload, { depth: null });
-    console.log("draftPayload");
-
+console.log(JSON.stringify(draftPayload),"draftPayload")
     const draftId = await createDraft(draftPayload, targetInstanceUrl, targetInstanceToken);
     if (!draftId) {
       return { success: false, reason: 'Draft creation failed', entryId: entry.id };
     }
 
     const timelinePayload = { ...draftPayload, id: draftId };
-    console.log(timelinePayload, "timelinePayload");
 
     const postConfig = {
       method: 'post',
@@ -570,7 +1176,8 @@ console.log(authorEmail,"author")
       maxBodyLength: Infinity
     };
 
-    await axios(postConfig);
+    const final = await axios(postConfig);
+    console.log(final.data, "timelinePostResult");
     return { success: true, entryId: entry.id };
 
   } catch (error) {
@@ -579,23 +1186,27 @@ console.log(authorEmail,"author")
   }
 }
 
+
 // Improved batch processing function
-async function processBatch(batch, userCache, companyCache, activityCache, targetInstanceUrl, targetInstanceToken, sourceInstanceUrl, sourceInstanceToken) {
+async function processBatch(batch, userCache, companyCache, activityCache,milestoneCache, targetInstanceUrl, targetInstanceToken, sourceInstanceUrl, sourceInstanceToken, sourceCompanyId,
+          targetCompanyId) {
   const results = [];
 
   // Process items in batch sequentially to avoid overwhelming the API
   for (const entry of batch) {
     try {
-      console.log(entry,"entry")
+      console.log(entry, "entry")
       const result = await processTimelineEntry(
         entry,
         userCache,
         companyCache,
         activityCache,
+        milestoneCache,
         targetInstanceUrl,
         targetInstanceToken,
         sourceInstanceUrl,
-        sourceInstanceToken
+        sourceInstanceToken, sourceCompanyId,
+          targetCompanyId
       );
       results.push(result);
 
@@ -649,7 +1260,8 @@ exports.migrateTimelines = async (req, res) => {
           'Cookie': sourceInstanceToken
         },
         data: JSON.stringify(payload),
-        maxBodyLength: Infinity
+        maxBodyLength: Infinity,
+        timeout: 30000 // Add timeout to prevent hanging
       };
 
       const response = await axios(config);
@@ -687,11 +1299,23 @@ exports.migrateTimelines = async (req, res) => {
 
     // Pre-load all reference data
     console.log('Pre-loading reference data...');
+    let sourceCompanyId, targetCompanyId;
+    
     try {
-      await Promise.all([
-        getAllUsers(targetInstanceUrl, targetInstanceToken),
+      const [sourceCompanies, targetCompanies] = await Promise.all([
+        getAllCompanies(sourceInstanceUrl, sourceInstanceToken),
         getAllCompanies(targetInstanceUrl, targetInstanceToken)
       ]);
+
+      sourceCompanyId = sourceCompanies?.[0]?.Gsid;
+      targetCompanyId = targetCompanies?.[0]?.Gsid;
+
+      if (!sourceCompanyId || !targetCompanyId) {
+        return res.status(500).json({ message: "Could not get company IDs for API calls" });
+      }
+
+      console.log(`Using source company ID: ${sourceCompanyId}`);
+      console.log(`Using target company ID: ${targetCompanyId}`);
     } catch (error) {
       console.error('Error pre-loading reference data:', error.message);
       return res.status(500).json({
@@ -704,7 +1328,8 @@ exports.migrateTimelines = async (req, res) => {
     const userCache = {};
     const companyCache = {};
     const activityCache = {};
-
+    const milestoneCache = {};
+    
     // Process with improved batch handling
     const BATCH_SIZE = 3; // Smaller batch size for better stability
     const batches = [];
@@ -731,10 +1356,13 @@ exports.migrateTimelines = async (req, res) => {
           userCache,
           companyCache,
           activityCache,
+          milestoneCache,
           targetInstanceUrl,
           targetInstanceToken,
           sourceInstanceUrl,
-          sourceInstanceToken
+          sourceInstanceToken,
+          sourceCompanyId,
+          targetCompanyId
         );
 
         // Count results
@@ -772,11 +1400,11 @@ exports.migrateTimelines = async (req, res) => {
       }
     }
 
-    // Clear caches to free memory
-    userDataCache = null;
-    companyDataCache = null;
-    sourceActivityTypesCache = null;
-    targetActivityTypesCache = null;
+    // Clear caches to free memory - Fixed variable names
+    Object.keys(userCache).forEach(key => delete userCache[key]);
+    Object.keys(companyCache).forEach(key => delete companyCache[key]);
+    Object.keys(activityCache).forEach(key => delete activityCache[key]);
+    Object.keys(milestoneCache).forEach(key => delete milestoneCache[key]);
 
     console.log('Migration completed!');
 
@@ -804,12 +1432,6 @@ exports.migrateTimelines = async (req, res) => {
 
   } catch (error) {
     console.error("Migration error:", error.message);
-
-    // Clear caches on error
-    userDataCache = null;
-    companyDataCache = null;
-    sourceActivityTypesCache = null;
-    targetActivityTypesCache = null;
 
     res.status(500).json({
       message: "Error during migration",

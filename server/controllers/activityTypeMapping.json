@@ -1,0 +1,137 @@
+[
+  {
+    "Activity Type Name": "3G At-Risk Migration Update",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "3G At-Risk Migration Update"
+  },
+  {
+    "Activity Type Name": "3G Migration Update",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "3G Migration Update"
+  },
+  {
+    "Activity Type Name": "Admin Agent Update",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "Admin Agent Update"
+  },
+  {
+    "Activity Type Name": "Admin Intake Form",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "Admin Intake Form"
+  },
+  {
+    "Activity Type Name": "Adoption Discussion",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "Adoption Discussion"
+  },
+  {
+    "Activity Type Name": "At-Risk Customer Update",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "At-Risk Customer Update"
+  },
+  {
+    "Activity Type Name": "Automated Program(System)",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "Automated Program(System)"
+  },
+  {
+    "Activity Type Name": "Call(System)",
+    "MainCategory": "Call",
+    "Sub-Activity Type": "Call(System)"
+  },
+  {
+    "Activity Type Name": "Cancellation Request",
+    "MainCategory": "Cancellation Request",
+    "Sub-Activity Type": "Cancellation Request"
+  },
+  {
+    "Activity Type Name": "CRT/PRM Update",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "CRT/PRM Update"
+  },
+  {
+    "Activity Type Name": "CST - Adoption",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "CST - Adoption"
+  },
+  {
+    "Activity Type Name": "CST - Revenue Generating",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "CST - Revenue Generating"
+  },
+  {
+    "Activity Type Name": "CST - RYG",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "CST - RYG"
+  },
+  {
+    "Activity Type Name": "Customer Note",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "Customer Note"
+  },
+  {
+    "Activity Type Name": "EBR",
+    "MainCategory": "Meeting",
+    "Sub-Activity Type": "EBR"
+  },
+  {
+    "Activity Type Name": "Email(System)",
+    "MainCategory": "Email",
+    "Sub-Activity Type": "Email(System)"
+  },
+  {
+    "Activity Type Name": "EST Update",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "EST Update"
+  },
+  {
+    "Activity Type Name": "Ex-Customer Update",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "Ex-Customer Update"
+  },
+  {
+    "Activity Type Name": "Gov Cancellation Request",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "Gov Cancellation Request"
+  },
+  {
+    "Activity Type Name": "Internal",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "Internal"
+  },
+  {
+    "Activity Type Name": "Meeting(System)",
+    "MainCategory": "Meeting",
+    "Sub-Activity Type": "Meeting(System)"
+  },
+  {
+    "Activity Type Name": "Milestone(System)",
+    "MainCategory": "Milestone",
+    "Sub-Activity Type": "Milestone(System)"
+  },
+  {
+    "Activity Type Name": "Predictive Churn",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "Predictive Churn"
+  },
+  {
+    "Activity Type Name": "QBR",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "QBR"
+  },
+  {
+    "Activity Type Name": "Renewal Update",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "Renewal Update"
+  },
+  {
+    "Activity Type Name": "SSD Close Out",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "SSD Close Out"
+  },
+  {
+    "Activity Type Name": "Update(System)",
+    "MainCategory": "Update",
+    "Sub-Activity Type": "Update(System)"
+  }
+]
