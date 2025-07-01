@@ -113,12 +113,294 @@ exports.CompanyTimeLine = async (req, res) => {
   }
 };
 
-
-
-
-
 const fs = require('fs').promises;
 const path = require('path');
+
+// Migration Tracking and Logging Utility
+const MigrationTracker = {
+  // Initialize tracking data
+  initializeTracking() {
+    return {
+      migrationId: this.generateMigrationId(),
+      startTime: new Date(),
+      endTime: null,
+      totalDuration: null,
+      totalProcessed: 0,
+      successfulMigrations: [],
+      failedMigrations: [],
+      statistics: {
+        totalCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        batchesProcessed: 0,
+        averageTimePerActivity: null
+      },
+      batchTiming: [],
+      errors: [],
+      summary: null
+    };
+  },
+
+  // Generate unique migration ID
+  generateMigrationId() {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const randomId = Math.random().toString(36).substring(2, 8);
+    return `migration_${timestamp}_${randomId}`;
+  },
+
+  // Track successful migration
+  trackSuccess(trackingData, sourceActivityId, targetActivityId, activityDetails = {}) {
+    const successRecord = {
+      sourceActivityId: sourceActivityId,
+      targetActivityId: targetActivityId,
+      migratedAt: new Date().toISOString(),
+      activityType: activityDetails.activityType || null,
+      companyName: activityDetails.companyName || null,
+      authorEmail: activityDetails.authorEmail || null,
+      subject: activityDetails.subject || null
+    };
+
+    trackingData.successfulMigrations.push(successRecord);
+    trackingData.statistics.successCount++;
+    console.log(`✅ SUCCESS: Activity ${sourceActivityId} → ${targetActivityId}`);
+  },
+
+  // Track failed migration
+  trackFailure(trackingData, sourceActivityId, reason, activityDetails = {}) {
+    const failureRecord = {
+      sourceActivityId: sourceActivityId,
+      reason: reason,
+      failedAt: new Date().toISOString(),
+      activityType: activityDetails.activityType || null,
+      companyName: activityDetails.companyName || null,
+      authorEmail: activityDetails.authorEmail || null,
+      subject: activityDetails.subject || null,
+      errorCode: this.categorizeError(reason)
+    };
+
+    trackingData.failedMigrations.push(failureRecord);
+    trackingData.statistics.failureCount++;
+    console.log(`❌ FAILURE: Activity ${sourceActivityId} - ${reason}`);
+  },
+
+  // Categorize errors for better analysis
+  categorizeError(reason) {
+    if (reason.includes('API')) return 'API_ERROR';
+    if (reason.includes('validation')) return 'VALIDATION_ERROR';
+    if (reason.includes('timeout')) return 'TIMEOUT_ERROR';
+    if (reason.includes('authentication')) return 'AUTH_ERROR';
+    if (reason.includes('company')) return 'COMPANY_MAPPING_ERROR';
+    if (reason.includes('user')) return 'USER_MAPPING_ERROR';
+    if (reason.includes('activity type')) return 'ACTIVITY_TYPE_ERROR';
+    if (reason.includes('attachment')) return 'ATTACHMENT_ERROR';
+    return 'UNKNOWN_ERROR';
+  },
+
+  // Track batch timing
+  trackBatchTiming(trackingData, batchIndex, batchSize, startTime, endTime, successCount, failureCount) {
+    const duration = endTime - startTime;
+    const batchRecord = {
+      batchIndex: batchIndex + 1,
+      batchSize: batchSize,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      duration: duration,
+      durationFormatted: this.formatDuration(duration),
+      successCount: successCount,
+      failureCount: failureCount,
+      averageTimePerActivity: batchSize > 0 ? Math.round(duration / batchSize) : 0
+    };
+
+    trackingData.batchTiming.push(batchRecord);
+    trackingData.statistics.batchesProcessed++;
+  },
+
+  // Track unexpected errors
+  trackError(trackingData, error, context = '') {
+    const errorRecord = {
+      timestamp: new Date().toISOString(),
+      context: context,
+      message: error.message,
+      stack: error.stack,
+      type: error.constructor.name
+    };
+
+    trackingData.errors.push(errorRecord);
+    console.error(`🚨 ERROR [${context}]: ${error.message}`);
+  },
+
+  // Finalize tracking and generate summary
+  finalizeTracking(trackingData) {
+    trackingData.endTime = new Date();
+    trackingData.totalDuration = trackingData.endTime - trackingData.startTime;
+    trackingData.totalProcessed = trackingData.statistics.successCount + trackingData.statistics.failureCount;
+
+    // Calculate average time per activity
+    if (trackingData.totalProcessed > 0) {
+      trackingData.statistics.averageTimePerActivity = Math.round(trackingData.totalDuration / trackingData.totalProcessed);
+    }
+
+    // Generate comprehensive summary
+    trackingData.summary = this.generateSummary(trackingData);
+
+    return trackingData;
+  },
+
+  // Generate detailed summary report
+  generateSummary(trackingData) {
+    const successRate = trackingData.totalProcessed > 0 
+      ? ((trackingData.statistics.successCount / trackingData.totalProcessed) * 100).toFixed(2)
+      : 0;
+
+    const summary = {
+      migrationOverview: {
+        migrationId: trackingData.migrationId,
+        startTime: trackingData.startTime.toISOString(),
+        endTime: trackingData.endTime.toISOString(),
+        totalDuration: this.formatDuration(trackingData.totalDuration),
+        totalDurationMs: trackingData.totalDuration
+      },
+      statistics: {
+        totalActivitiesProcessed: trackingData.totalProcessed,
+        successfulMigrations: trackingData.statistics.successCount,
+        failedMigrations: trackingData.statistics.failureCount,
+        successRate: `${successRate}%`,
+        batchesProcessed: trackingData.statistics.batchesProcessed,
+        averageTimePerActivity: `${trackingData.statistics.averageTimePerActivity}ms`,
+        unexpectedErrors: trackingData.errors.length
+      },
+      performance: {
+        totalBatches: trackingData.batchTiming.length,
+        fastestBatch: this.getFastestBatch(trackingData.batchTiming),
+        slowestBatch: this.getSlowestBatch(trackingData.batchTiming),
+        averageBatchTime: this.getAverageBatchTime(trackingData.batchTiming)
+      },
+      errorAnalysis: this.analyzeErrors(trackingData.failedMigrations)
+    };
+
+    return summary;
+  },
+
+  // Helper function to format duration
+  formatDuration(milliseconds) {
+    const seconds = Math.floor(milliseconds / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours > 0) {
+      return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s ${milliseconds % 1000}ms`;
+    }
+  },
+
+  // Analyze batch performance
+  getFastestBatch(batchTiming) {
+    if (batchTiming.length === 0) return null;
+    const fastest = batchTiming.reduce((prev, current) => 
+      (prev.duration < current.duration) ? prev : current
+    );
+    return {
+      batchIndex: fastest.batchIndex,
+      duration: this.formatDuration(fastest.duration),
+      activitiesProcessed: fastest.batchSize
+    };
+  },
+
+  getSlowestBatch(batchTiming) {
+    if (batchTiming.length === 0) return null;
+    const slowest = batchTiming.reduce((prev, current) => 
+      (prev.duration > current.duration) ? prev : current
+    );
+    return {
+      batchIndex: slowest.batchIndex,
+      duration: this.formatDuration(slowest.duration),
+      activitiesProcessed: slowest.batchSize
+    };
+  },
+
+  getAverageBatchTime(batchTiming) {
+    if (batchTiming.length === 0) return '0ms';
+    const totalTime = batchTiming.reduce((sum, batch) => sum + batch.duration, 0);
+    const averageTime = totalTime / batchTiming.length;
+    return this.formatDuration(averageTime);
+  },
+
+  // Analyze error patterns
+  analyzeErrors(failedMigrations) {
+    const errorCounts = {};
+    failedMigrations.forEach(failure => {
+      const errorCode = failure.errorCode;
+      errorCounts[errorCode] = (errorCounts[errorCode] || 0) + 1;
+    });
+
+    const sortedErrors = Object.entries(errorCounts)
+      .sort(([,a], [,b]) => b - a)
+      .map(([errorType, count]) => ({ errorType, count }));
+
+    return {
+      totalErrors: failedMigrations.length,
+      errorBreakdown: sortedErrors,
+      mostCommonError: sortedErrors[0] || null
+    };
+  },
+
+  // Save tracking data to file
+  async saveTrackingData(trackingData, outputDir = './migration-logs') {
+    try {
+      // Ensure output directory exists
+      await fs.mkdir(outputDir, { recursive: true });
+
+      const fileName = `migration_log_${trackingData.migrationId}.json`;
+      const filePath = path.join(outputDir, fileName);
+
+      // Save complete tracking data
+      await fs.writeFile(filePath, JSON.stringify(trackingData, null, 2));
+      console.log(`📊 Migration tracking data saved to: ${filePath}`);
+
+      // Save summary report separately
+      const summaryFileName = `migration_summary_${trackingData.migrationId}.json`;
+      const summaryFilePath = path.join(outputDir, summaryFileName);
+      await fs.writeFile(summaryFilePath, JSON.stringify(trackingData.summary, null, 2));
+      console.log(`📋 Migration summary saved to: ${summaryFilePath}`);
+
+      return { logFile: filePath, summaryFile: summaryFilePath };
+
+    } catch (error) {
+      console.error('Error saving tracking data:', error.message);
+      return null;
+    }
+  },
+
+  // Print console summary
+  printConsoleSummary(trackingData) {
+    const summary = trackingData.summary;
+    
+    console.log('\n' + '='.repeat(80));
+    console.log('📊 MIGRATION SUMMARY REPORT');
+    console.log('='.repeat(80));
+    console.log(`Migration ID: ${summary.migrationOverview.migrationId}`);
+    console.log(`Duration: ${summary.migrationOverview.totalDuration}`);
+    console.log(`Total Processed: ${summary.statistics.totalActivitiesProcessed}`);
+    console.log(`✅ Successful: ${summary.statistics.successfulMigrations}`);
+    console.log(`❌ Failed: ${summary.statistics.failedMigrations}`);
+    console.log(`📈 Success Rate: ${summary.statistics.successRate}`);
+    console.log(`⚡ Average Time per Activity: ${summary.statistics.averageTimePerActivity}`);
+    
+    if (summary.errorAnalysis.totalErrors > 0) {
+      console.log('\n📋 Error Breakdown:');
+      summary.errorAnalysis.errorBreakdown.forEach(error => {
+        console.log(`  • ${error.errorType}: ${error.count} occurrences`);
+      });
+    }
+    
+    console.log('='.repeat(80) + '\n');
+  }
+};
+
+// Your existing constants and mappings remain the same
 const ACTIVITY_TYPE_MAPPING = [
   { "Old Verizon Activity Type Name": "3G At-Risk Migration Update", "Activity Type": "Update", "Sub-Activity Type": "" },
   { "Old Verizon Activity Type Name": "3G Migration Update", "Activity Type": "Update", "Sub-Activity Type": "" },
@@ -146,11 +428,9 @@ const ACTIVITY_TYPE_MAPPING = [
   { "Old Verizon Activity Type Name": "Renewal Update", "Activity Type": "Update", "Sub-Activity Type": "Renewal Update" },
   { "Old Verizon Activity Type Name": "Save-a-thon Campaign Activity", "Activity Type": "Update", "Sub-Activity Type": "" },
   { "Old Verizon Activity Type Name": "SSD Close Out", "Activity Type": "Update", "Sub-Activity Type": "SSD Close Out" },
-  { "Old Verizon Activity Type Name": "Test", "Activity Type": "Update", "Sub-Activity Type": "" },
   { "Old Verizon Activity Type Name": "Update", "Activity Type": "Update", "Sub-Activity Type": "" }
 ];
 
-// 📋 EXACT Milestone Type Mapping JSON (Your Business Logic - 22 mappings)
 const MILESTONE_TYPE_MAPPING = [
   { "Old Milestone Type": "Adopting", "New Milestone Type": "Adopting" },
   { "Old Milestone Type": "CSM Assigned", "New Milestone Type": "CSM Transition" },
@@ -176,7 +456,7 @@ const MILESTONE_TYPE_MAPPING = [
   { "Old Milestone Type": "Will Churn", "New Milestone Type": "Will Churn" }
 ];
 
-// 🔍 Global Cache Variables
+// Global Cache Variables (keeping your existing structure)
 let userDataCache = null;
 let companyDataCache = null;
 let sourceActivityTypesCache = null;
@@ -185,73 +465,37 @@ let subActivityTypesCache = null;
 let meetingSubTypesCache = null;
 let sourceMilestoneTypesCache = null;
 let targetMilestoneTypesCache = null;
+
+// All your existing functions remain unchanged
 function normalizeString(str) {
   if (!str) return '';
   return str.toString().toLowerCase().trim().replace(/\s+/g, ' ');
 }
-const USERS_JSON_FILE = path.join(__dirname, 'users.json');
 
-async function getAllUsers(instanceUrl, sessionCookie) {
-  // First check in-memory cache
+const USERS_JSON_FILE = path.join(__dirname, 'targetusers.json');
+
+async function getAllTargetUsers(instanceUrl, sessionCookie) {
+  // Return cached data if available
   if (userDataCache) return userDataCache;
 
   try {
-    // Try to read from JSON file
     const usersFromFile = await readUsersFromFile();
-    if (usersFromFile && usersFromFile.length > 0) {
+
+    if (Array.isArray(usersFromFile) && usersFromFile.length > 0) {
       console.log(`Loaded ${usersFromFile.length} users from JSON file`);
       userDataCache = usersFromFile;
-      return usersFromFile;
+    } else {
+      console.warn('No users found in JSON file');
     }
 
-    // If no file or empty file, fetch from API
-    console.log('JSON file not found or empty, fetching from API...');
-    let allUsers = [];
-    let pageNumber = 1;
-
-    while (true) {
-      const response = await axios.post(
-        `${instanceUrl}/v1/dataops/gdm/list?object=GsUser`,
-        {
-          limit: 25,
-          pageNumber: pageNumber,
-          searchString: "",
-          clause: null,
-          fields: ["Email", "Gsid"]
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Cookie': sessionCookie
-          }
-        }
-      );
-
-      const users = response.data?.data?.data || [];
-      console.log(`Page ${pageNumber} fetched with ${users.length} users.`);
-
-      if (users.length === 0) {
-        break; // Exit loop if no more users
-      }
-
-      allUsers = [...allUsers, ...users];
-      pageNumber++;
-    }
-
-    console.log(`Total users fetched: ${allUsers.length}`);
-
-    // Save to JSON file
-    await saveUsersToFile(allUsers);
-
-    // Cache in memory
-    userDataCache = allUsers;
-    return allUsers;
+    return userDataCache || [];
 
   } catch (error) {
     console.error('Error fetching all users:', error.message);
     return [];
   }
 }
+
 
 async function readUsersFromFile() {
   try {
@@ -271,18 +515,6 @@ async function readUsersFromFile() {
     return null;
   }
 }
-
-async function saveUsersToFile(users) {
-  try {
-    const jsonData = JSON.stringify(users, null, 2);
-    await fs.writeFile(USERS_JSON_FILE, jsonData, 'utf8');
-    console.log(`Successfully saved ${users.length} users to ${USERS_JSON_FILE}`);
-  } catch (error) {
-    console.error('Error saving users to file:', error.message);
-  }
-}
-
-// Optional: Function to clear the JSON cache
 async function clearUsersCache() {
   try {
     await fs.unlink(USERS_JSON_FILE);
@@ -293,63 +525,20 @@ async function clearUsersCache() {
   }
 }
 
-const COMPANIES_JSON_FILE = path.join(__dirname, 'companies.json');
+const COMPANIES_JSON_FILE = path.join(__dirname, 'targetcompanies.json');
 
 async function getAllCompanies(instanceUrl, sessionCookie) {
-  // First check in-memory cache
   if (companyDataCache) return companyDataCache;
 
   try {
-    // Try to read from JSON file
     const companiesFromFile = await readCompaniesFromFile();
     if (companiesFromFile && companiesFromFile.length > 0) {
       console.log(`Loaded ${companiesFromFile.length} companies from JSON file`);
       companyDataCache = companiesFromFile;
       return companiesFromFile;
     }
-
-    // If no file or empty file, fetch from API
-    console.log('JSON file not found or empty, fetching from API...');
-    let allCompanies = [];
-    let pageNumber = 1;
-
-    while (true) {
-      const response = await axios.post(
-        `${instanceUrl}/v1/dataops/gdm/list?object=Company`,
-        {
-          limit: 200,
-          pageNumber: pageNumber,
-          searchString: "",
-          clause: null,
-          fields: ["Name", "Gsid"]
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Cookie': sessionCookie
-          }
-        }
-      );
-
-      const companies = response.data?.data?.data || [];
-      console.log(`Page ${pageNumber} fetched with ${companies.length} companies.`);
-
-      if (companies.length === 0) {
-        break; // Exit loop if no more companies
-      }
-
-      allCompanies = [...allCompanies, ...companies];
-      pageNumber++;
-    }
-
-    console.log(`Total companies fetched: ${allCompanies.length}`);
-
-    // Save to JSON file
-    await saveCompaniesToFile(allCompanies);
-
-    // Cache in memory
-    companyDataCache = allCompanies;
-    return allCompanies;
+  
+    return companiesFromFile;
 
   } catch (error) {
     console.error('Error fetching all companies:', error.message);
@@ -386,7 +575,6 @@ async function saveCompaniesToFile(companies) {
   }
 }
 
-// Optional: Function to clear the JSON cache
 async function clearCompaniesCache() {
   try {
     await fs.unlink(COMPANIES_JSON_FILE);
@@ -396,6 +584,7 @@ async function clearCompaniesCache() {
     console.error('Error clearing companies cache:', error.message);
   }
 }
+
 async function getAllActivityTypes(instanceUrl, sessionToken, cacheKey, companyId) {
   const cache = cacheKey === 'source' ? sourceActivityTypesCache : targetActivityTypesCache;
   if (cache) return cache;
@@ -424,6 +613,7 @@ async function getAllActivityTypes(instanceUrl, sessionToken, cacheKey, companyI
     return [];
   }
 }
+
 async function getSubActivityTypes(targetInstanceUrl, targetInstanceToken) {
   if (subActivityTypesCache) return subActivityTypesCache;
 
@@ -549,8 +739,6 @@ async function getAdvancedActivityMapping(oldActivityTypeName, targetInstanceUrl
   }
 }
 
-// 🏁 MILESTONE TYPE FUNCTIONS
-
 async function getSourceMilestoneTypes(sourceInstanceUrl, sourceInstanceToken, companyId) {
   if (sourceMilestoneTypesCache) return sourceMilestoneTypesCache;
 
@@ -660,140 +848,35 @@ async function getMilestoneTypeMapping(oldMilestoneTypeId, sourceInstanceUrl, so
 
 async function getUserIdByEmail(email, instanceUrl, sessionCookie) {
   try {
-    const users = await getAllUsers(instanceUrl, sessionCookie);
-    const user = users.find(u => u.Email?.toLowerCase() === email.toLowerCase());
-    return user ? user.Gsid : "1P01E316G9DAPFOLE6SOOUG71XRMN5F3PLER";
+    const users = await getAllTargetUsers(instanceUrl, sessionCookie);
+    
+    let user = users.find(u => u.Email?.toLowerCase() === email.toLowerCase());
+
+    // If not found, fallback to no-reply@gainsightapp.com
+    if (!user) {
+      console.warn(`User with email ${email} not found. Falling back to no-reply@gainsightapp.com`);
+      user = users.find(u => u.Email?.toLowerCase() === 'no-reply@gainsightapp.com');
+    }
+
+    return user;
   } catch (error) {
     console.error(`Error getting user ID by email (${email}):`, error.message);
-    return "1P01E316G9DAPFOLE6SOOUG71XRMN5F3PLER"; // Return default instead of null
+    return "1P01E316G9DAPFOLE6SOOUG71XRMN5F3PLER";
   }
 }
+
 
 async function getCompanyIdByName(companyName, instanceUrl, sessionCookie) {
   try {
     const companies = await getAllCompanies(instanceUrl, sessionCookie);
-    // console.log(companies,"companies")
     const company = companies.find(c => c.Name?.toLowerCase() === companyName.toLowerCase());
-    return company ? company.Gsid : "";
+    return company ? company.GSID : null;
   } catch (error) {
     console.error(`Error getting company ID by name (${companyName}):`, error.message);
     return "";
   }
 }
 
-
-const activityTypeMappings = require('./activityTypeMapping.json'); // your JSON mapping file
-
-async function getActivityId(
-  activityid,
-  targetInstanceUrl,
-  targetInstanceToken,
-  sourceInstanceUrl,
-  sourceInstanceToken
-) {
-  try {
-    const [sourceActivityTypes, targetActivityTypes] = await Promise.all([
-      getAllActivityTypes(sourceInstanceUrl, sourceInstanceToken, 'source'),
-      getAllActivityTypes(targetInstanceUrl, targetInstanceToken, 'target')
-    ]);
-
-    console.log(sourceActivityTypes, "sourceActivityTypes");
-    console.log(targetActivityTypes, "targetActivityTypes");
-
-    await saveActivityTypesToJson(sourceActivityTypes, targetActivityTypes);
-
-    const sourceActivity = sourceActivityTypes.find(type => type.id === activityid);
-    if (!sourceActivity) return null;
-
-    let foundInSubCategory = false;
-    let targetActivity = targetActivityTypes.find(type => type.name === sourceActivity.name);
-
-    let subCategoryId = null;
-    let mainCategoryName = null;
-
-    // If not found in regular activity types, check subcategory
-    if (!targetActivity) {
-      const subCategoryItem = await getSubCategoryByName(sourceActivity.name, targetInstanceUrl, targetInstanceToken);
-      if (subCategoryItem) {
-        foundInSubCategory = true;
-        subCategoryId = subCategoryItem.id;
-
-        // Find main category name from mapping
-        const match = activityTypeMappings.find(
-          item => item["Sub-Activity Type"] === sourceActivity.name
-        );
-        mainCategoryName = match?.MainCategory || null;
-        targetActivity = targetActivityTypes.find(type => type.name === mainCategoryName);
-      }
-    }
-
-    return {
-      id: targetActivity?.id || null,
-      subCategoryId: subCategoryId,
-      mainCategoryName: mainCategoryName
-    };
-  } catch (error) {
-    console.error(`Error getting activity ID:`, error.message);
-    return null;
-  }
-}
-
-async function getSubCategoryByName(name, instanceUrl, token) {
-  try {
-    const categoryId = '1I00127ZUZQS288U7Q0I0OI65NMXCF5KYKH2'; // Replace with dynamic if needed
-    const url = `${instanceUrl}/v1/ant/picklist/items/category/?ct=&id=${categoryId}&ref=`;
-
-    const response = await axios.get(url, {
-      headers: {
-        Cookie: `sid=${token}`
-      }
-    });
-
-    const item = response.data?.data?.find(entry => entry.label === name || entry.system_name === name);
-    return item || null;
-
-  } catch (err) {
-    console.error('Error fetching subcategory:', err.message);
-    return null;
-  }
-}
-
-
-async function saveActivityTypesToJson(sourceActivityTypes, targetActivityTypes) {
-  try {
-    // Create a directory for the JSON files if it doesn't exist
-    const outputDir = './activity-types';
-    await fs.mkdir(outputDir, { recursive: true });
-
-    // Save source activity types
-    const sourceFilePath = path.join(outputDir, 'sourceActivityTypes.json');
-    await fs.writeFile(sourceFilePath, JSON.stringify(sourceActivityTypes, null, 2));
-    console.log(`Source activity types saved to: ${sourceFilePath}`);
-
-    // Save target activity types
-    const targetFilePath = path.join(outputDir, 'targetActivityTypes.json');
-    await fs.writeFile(targetFilePath, JSON.stringify(targetActivityTypes, null, 2));
-    console.log(`Target activity types saved to: ${targetFilePath}`);
-
-    // Optionally, save both in a single file with metadata
-    const combinedData = {
-      timestamp: new Date().toISOString(),
-      sourceActivityTypes,
-      targetActivityTypes,
-      counts: {
-        source: sourceActivityTypes.length,
-        target: targetActivityTypes.length
-      }
-    };
-
-    const combinedFilePath = path.join(outputDir, 'combinedActivityTypes.json');
-    await fs.writeFile(combinedFilePath, JSON.stringify(combinedData, null, 2));
-    console.log(`Combined activity types saved to: ${combinedFilePath}`);
-
-  } catch (error) {
-    console.error('Error saving activity types to JSON:', error.message);
-  }
-}
 async function downloadAttachment(attachmentUrl, attachmentName) {
   try {
     const response = await axios({
@@ -812,18 +895,18 @@ async function downloadAttachment(attachmentUrl, attachmentName) {
     throw error;
   }
 }
+
 async function uploadAttachment(attachmentData, companyId, companyLabel, userId, userName, userEmail, targetInstanceUrl, targetInstanceToken) {
   try {
     const FormData = require('form-data');
     const form = new FormData();
     console.log(attachmentData, "attachmentData")
-    // Add the file buffer
+
     form.append('file', attachmentData.buffer, {
       filename: attachmentData.name,
       contentType: attachmentData.contentType
     });
 
-    // Prepare the request string payload
     const requestPayload = {
       entityId: null,
       contexts: [{
@@ -867,7 +950,6 @@ async function uploadAttachment(attachmentData, companyId, companyLabel, userId,
     };
 
     const response = await axios(config);
-    // console.log(response.data,"yuva")
     return response.data.data;
 
   } catch (error) {
@@ -875,6 +957,7 @@ async function uploadAttachment(attachmentData, companyId, companyLabel, userId,
     throw error;
   }
 }
+
 async function processAttachments(attachments, companyId, companyLabel, userId, userName, userEmail, targetInstanceUrl, targetInstanceToken) {
   const uploadedAttachments = [];
 
@@ -882,10 +965,8 @@ async function processAttachments(attachments, companyId, companyLabel, userId, 
     try {
       console.log(`Processing attachment: ${attachment.name}`);
 
-      // Download attachment from source
       const attachmentData = await downloadAttachment(attachment.url, attachment.name);
 
-      // Upload to target instance
       const uploadResult = await uploadAttachment(
         attachmentData,
         companyId,
@@ -897,7 +978,7 @@ async function processAttachments(attachments, companyId, companyLabel, userId, 
         targetInstanceToken
       );
       console.log(uploadResult, "uploadResult")
-      // Transform the upload result to match the expected format
+
       const processedAttachment = {
         id: uploadResult.id || uploadResult.attachmentId,
         seqId: uploadResult.seqId || attachment.seqId,
@@ -917,17 +998,16 @@ async function processAttachments(attachments, companyId, companyLabel, userId, 
       uploadedAttachments.push(processedAttachment);
       console.log(`Successfully uploaded attachment: ${attachment.name}`);
 
-      // Small delay between attachment uploads
       await new Promise(resolve => setTimeout(resolve, 500));
 
     } catch (error) {
       console.error(`Failed to process attachment ${attachment.name}:`, error.message);
-      // Continue with other attachments even if one fails
     }
   }
 
   return uploadedAttachments;
 }
+
 async function createDraft(draftPayload, targetInstanceUrl, targetInstanceToken) {
   try {
     const response = await axios({
@@ -949,7 +1029,7 @@ async function createDraft(draftPayload, targetInstanceUrl, targetInstanceToken)
   }
 }
 
-// Helper function to process a single timeline entry with better error handling
+// Enhanced processTimelineEntry with tracking integration
 async function processTimelineEntry(
   entry,
   userCache,
@@ -959,21 +1039,34 @@ async function processTimelineEntry(
   targetInstanceUrl,
   targetInstanceToken,
   sourceInstanceUrl,
-  sourceInstanceToken, sourceCompanyId,
-          targetCompanyId
+  sourceInstanceToken,
+  sourceCompanyId,
+  targetCompanyId,
+  trackingData
 ) {
+  const entryStartTime = new Date();
+  
   try {
     console.log('Processing entry:', entry.id || 'unknown');
 
+    // Extract activity details for tracking
+    const activityDetails = {
+      activityType: entry?.meta?.activityTypeId || null,
+      companyName: entry.contexts?.[0]?.lbl || null,
+      authorEmail: entry.author?.email || null,
+      subject: entry.note?.subject || null
+    };
+
     // Handle user cache
-    let userId;
+    let userInfo;
     const authorEmail = entry.author?.email;
     if (authorEmail) {
       if (userCache[authorEmail]) {
-        userId = userCache[authorEmail];
+        userInfo = userCache[authorEmail];
       } else {
-        userId = await getUserIdByEmail(authorEmail, targetInstanceUrl, targetInstanceToken);
-        userCache[authorEmail] = userId;
+        userInfo = await getUserIdByEmail(authorEmail, targetInstanceUrl, targetInstanceToken);
+       //pLAYWRIGHT NEED TO write here
+        userCache[authorEmail] = userInfo.GSID;
       }
     }
 
@@ -990,6 +1083,7 @@ async function processTimelineEntry(
     }
 
     if (!companyId) {
+      MigrationTracker.trackFailure(trackingData, entry.id, 'No company ID found', activityDetails);
       return { success: false, reason: 'No company ID found', entryId: entry.id };
     }
 
@@ -1005,7 +1099,7 @@ async function processTimelineEntry(
       if (activityCache[cacheKey]) {
         activityMapping = activityCache[cacheKey];
       } else {
-        const sourceActivityTypes = await getAllActivityTypes(sourceInstanceUrl, sourceInstanceToken, 'source', sourceCompanyId);
+        const sourceActivityTypes = await getAllActivityTypes(sourceInstanceUrl, sourceInstanceToken, 'source', entry.contexts?.[0]?.id);
         const sourceActivity = sourceActivityTypes.find(type => type.id === sourceActivityTypeId);
        
         if (sourceActivity) {
@@ -1027,7 +1121,7 @@ async function processTimelineEntry(
       }
     }
 
-    // 🏁 Handle milestone type mapping (only for Milestone activities)
+    // Handle milestone type mapping (only for Milestone activities)
     let milestoneMapping = null;
     const oldMilestoneTypeId = entry?.note?.customFields?.milestoneType;
 
@@ -1045,7 +1139,7 @@ async function processTimelineEntry(
           sourceInstanceToken,
           targetInstanceUrl,
           targetInstanceToken,
-          sourceCompanyId,
+          entry.contexts?.[0]?.id,
           targetCompanyId
         );
        
@@ -1056,6 +1150,7 @@ async function processTimelineEntry(
         }
       }
     }
+
     // Process attachments
     let processedAttachments = [];
     if (entry.attachments && entry.attachments.length > 0) {
@@ -1072,6 +1167,7 @@ async function processTimelineEntry(
         );
       } catch (error) {
         console.error(`Error processing attachments for entry ${entry.id}:`, error.message);
+        MigrationTracker.trackError(trackingData, error, `Attachment processing for entry ${entry.id}`);
       }
     }
 
@@ -1089,7 +1185,7 @@ async function processTimelineEntry(
       externalAttendees: []
     };
 
-     if (activityMapping?.subActivityTypeId) {
+    if (activityMapping?.subActivityTypeId) {
       customFields.Ant__Activity_Subtype__c = activityMapping.subActivityTypeId;
       console.log(`✅ Added sub-activity type: ${activityMapping.subActivityTypeId}`);
     }
@@ -1099,7 +1195,13 @@ async function processTimelineEntry(
       customFields.milestoneType = milestoneMapping.newMilestoneTypeId;
       console.log(`✅ Added milestone type: ${milestoneMapping.newMilestoneTypeId} (${milestoneMapping.mappingRule})`);
     }
-
+     customFields.Ant__externalid__c = entry.id;
+     let externalSourceDetails={}
+     //Need to  verify
+if(entry?.meta?.externalSourceDetails?.externalSystems.length>0)
+{
+externalSourceDetails={externalSystems:entry?.meta?.externalSourceDetails?.externalSystems}
+}
     const draftPayload = {
       lastModifiedByUser: {
         gsId: userId,
@@ -1120,6 +1222,7 @@ async function processTimelineEntry(
       mentions: [],
       relatedRecords: null,
       meta: {
+        externalSourceDetails:externalSourceDetails,
         activityTypeId: activityMapping?.activityTypeId,
         ctaId: null,
         source: "GLOBAL_TIMELINE",
@@ -1157,9 +1260,12 @@ async function processTimelineEntry(
         }
       ]
     };
-console.log(JSON.stringify(draftPayload),"draftPayload")
+
+    console.log(JSON.stringify(draftPayload),"draftPayload")
+
     const draftId = await createDraft(draftPayload, targetInstanceUrl, targetInstanceToken);
     if (!draftId) {
+      MigrationTracker.trackFailure(trackingData, entry.id, 'Draft creation failed', activityDetails);
       return { success: false, reason: 'Draft creation failed', entryId: entry.id };
     }
 
@@ -1178,24 +1284,56 @@ console.log(JSON.stringify(draftPayload),"draftPayload")
 
     const final = await axios(postConfig);
     console.log(final.data, "timelinePostResult");
-    return { success: true, entryId: entry.id };
+    
+    // Track successful migration
+    const targetActivityId = final.data?.data?.id || draftId;
+    MigrationTracker.trackSuccess(trackingData, entry.id, targetActivityId, activityDetails);
+    
+    return { success: true, entryId: entry.id, targetId: targetActivityId };
 
   } catch (error) {
     console.error('Error processing timeline entry:', error.message);
+    MigrationTracker.trackError(trackingData, error, `Processing entry ${entry.id}`);
+    
+    // Extract activity details for failure tracking
+    const activityDetails = {
+      activityType: entry?.meta?.activityTypeId || null,
+      companyName: entry.contexts?.[0]?.lbl || null,
+      authorEmail: entry.author?.email || null,
+      subject: entry.note?.subject || null
+    };
+    
+    MigrationTracker.trackFailure(trackingData, entry.id, error.message, activityDetails);
     return { success: false, reason: error.message, entryId: entry.id };
   }
 }
 
-
-// Improved batch processing function
-async function processBatch(batch, userCache, companyCache, activityCache,milestoneCache, targetInstanceUrl, targetInstanceToken, sourceInstanceUrl, sourceInstanceToken, sourceCompanyId,
-          targetCompanyId) {
+// Enhanced batch processing function with tracking
+async function processBatch(
+  batch, 
+  userCache, 
+  companyCache, 
+  activityCache,
+  milestoneCache, 
+  targetInstanceUrl, 
+  targetInstanceToken, 
+  sourceInstanceUrl, 
+  sourceInstanceToken, 
+  sourceCompanyId,
+  targetCompanyId,
+  trackingData,
+  batchIndex
+) {
+  const batchStartTime = new Date();
   const results = [];
+  let batchSuccessCount = 0;
+  let batchFailureCount = 0;
+
+  console.log(`🚀 Starting batch ${batchIndex + 1} with ${batch.length} activities...`);
 
   // Process items in batch sequentially to avoid overwhelming the API
   for (const entry of batch) {
     try {
-      console.log(entry, "entry")
       const result = await processTimelineEntry(
         entry,
         userCache,
@@ -1205,10 +1343,19 @@ async function processBatch(batch, userCache, companyCache, activityCache,milest
         targetInstanceUrl,
         targetInstanceToken,
         sourceInstanceUrl,
-        sourceInstanceToken, sourceCompanyId,
-          targetCompanyId
+        sourceInstanceToken,
+        sourceCompanyId,
+        targetCompanyId,
+        trackingData
       );
+      
       results.push(result);
+      
+      if (result.success) {
+        batchSuccessCount++;
+      } else {
+        batchFailureCount++;
+      }
 
       // Small delay between each entry to prevent rate limiting
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -1216,81 +1363,139 @@ async function processBatch(batch, userCache, companyCache, activityCache,milest
     } catch (error) {
       console.log(error)
       console.error(`Failed to process entry ${entry.id}:`, error.message);
-      results.push({
+      MigrationTracker.trackError(trackingData, error, `Batch ${batchIndex + 1} - Entry ${entry.id}`);
+      
+      const failureResult = {
         success: false,
         reason: error.message,
         entryId: entry.id
-      });
+      };
+      results.push(failureResult);
+      batchFailureCount++;
     }
   }
+
+  const batchEndTime = new Date();
+  
+  // Track batch timing
+  MigrationTracker.trackBatchTiming(
+    trackingData, 
+    batchIndex, 
+    batch.length, 
+    batchStartTime, 
+    batchEndTime, 
+    batchSuccessCount, 
+    batchFailureCount
+  );
+
+  console.log(`✅ Completed batch ${batchIndex + 1}: ${batchSuccessCount} successes, ${batchFailureCount} failures`);
 
   return results;
 }
 
+// Main migration function with enhanced tracking
 exports.migrateTimelines = async (req, res) => {
+  // Initialize tracking
+  const trackingData = MigrationTracker.initializeTracking();
   try {
-    const { sourceInstanceUrl, sourceInstanceToken, targetInstanceUrl, targetInstanceToken } = req.body;
+    const { sourceInstanceUrl, sourceInstanceToken, targetInstanceUrl, targetInstanceToken, maxActivities = 45000 } = req.body;
 
     if (!sourceInstanceUrl || !sourceInstanceToken || !targetInstanceUrl || !targetInstanceToken) {
+      MigrationTracker.trackError(trackingData, new Error('Missing instance information'), 'Initialization');
       return res.status(400).json({ message: "Missing source or target instance information" });
     }
 
-    console.log('Starting timeline migration...');
+    console.log(`🎯 Starting timeline migration with ID: ${trackingData.migrationId}`);
+    console.log(`📊 Target: ${maxActivities} activities`);
 
     let allContent = [];
     let page = 0;
-    const size = 7; // Reduced batch size for more stable fetching
+    const PAGE_SIZE = 100; // Increased from 7 to 100 for better efficiency
+    let totalFetched = 0;
 
-    // Fetch all timelines with error handling
-    console.log('Fetching timeline data...');
-    // while (true) {
-    try {
-      const url = `${sourceInstanceUrl}/v1/ant/timeline/search/activity?page=${page}&size=${size}`;
-      const payload = {
-        quickSearch: {},
-        contextFilter: {},
-        filterContext: "GLOBAL_TIMELINE"
-      };
+    // Fetch all timelines with optimized pagination
+    console.log('📥 Fetching timeline data...');
+    
+    while (totalFetched < maxActivities) {
+      try {
+        const remainingToFetch = maxActivities - totalFetched;
+        const currentPageSize = Math.min(PAGE_SIZE, remainingToFetch);
+      
+        const url = `${sourceInstanceUrl}/v1/ant/timeline/search/activity?page=${page}&size=${currentPageSize}`;
+        const payload = {
+          quickSearch: {},
+          contextFilter: {},
+          filterContext: "GLOBAL_TIMELINE"
+        };
 
-      const config = {
-        method: 'post',
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Cookie': sourceInstanceToken
-        },
-        data: JSON.stringify(payload),
-        maxBodyLength: Infinity,
-        timeout: 30000 // Add timeout to prevent hanging
-      };
+        const config = {
+          method: 'post',
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cookie': sourceInstanceToken
+          },
+          data: JSON.stringify(payload),
+          maxBodyLength: Infinity,
+          timeout: 60000 // Increased timeout for larger pages
+        };
 
-      const response = await axios(config);
-      const content = response?.data?.data?.content || [];
+        const response = await axios(config);
+        const content = response?.data?.data?.content || [];
 
-      allContent = [...allContent, ...content];
+        if (content.length === 0) {
+          console.log('📄 No more content available, stopping fetch');
+          break;
+        }
 
-      const totalPages = response?.data?.data?.page?.totalPages;
-      const currentPage = response?.data?.data?.page?.number;
+        allContent = [...allContent, ...content];
+        totalFetched += content.length;
 
-      console.log(`Fetched page ${currentPage + 1}/${totalPages}, items: ${content.length}`);
+        const totalPages = response?.data?.data?.page?.totalPages;
+        const currentPage = response?.data?.data?.page?.number;
 
-      // if (content.length === 0 || currentPage + 1 >= totalPages) break;
-      page++;
+        console.log(`📄 Fetched page ${currentPage + 1}/${totalPages}, items: ${content.length}, total: ${totalFetched}/${maxActivities}`);
 
-      // Add delay between page fetches
-      await new Promise(resolve => setTimeout(resolve, 500));
+        // Stop if we've reached our target
+        if (totalFetched >= maxActivities) {
+          console.log(`🎯 Reached target of ${maxActivities} activities`);
+          break;
+        }
 
-    } catch (error) {
-      console.error(`Error fetching page ${page}:`, error.message);
-      // break; // Stop fetching on error
+        page++;
+        
+        // Reduced delay for faster fetching
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+      } catch (error) {
+        console.error(`❌ Error fetching page ${page}:`, error.message);
+        MigrationTracker.trackError(trackingData, error, `Fetching page ${page}`);
+        
+        // If we have some content, continue with what we have
+        if (allContent.length > 0) {
+          console.log(`⚠️ Continuing with ${allContent.length} activities already fetched`);
+          break;
+        } else {
+          throw error; // If no content fetched, fail the migration
+        }
+      }
     }
-    // }
 
-    console.log(`Total timeline entries to migrate: ${allContent.length}`);
+    // Trim to exact count if we over-fetched
+    if (allContent.length > maxActivities) {
+      allContent = allContent.slice(0, maxActivities);
+    }
+
+    trackingData.statistics.totalCount = allContent.length;
+    console.log(`📊 Total timeline entries to migrate: ${allContent.length}`);
 
     if (allContent.length === 0) {
+      const finalTracking = MigrationTracker.finalizeTracking(trackingData);
+      await MigrationTracker.saveTrackingData(finalTracking);
+      
       return res.status(200).json({
         message: "No timeline entries found to migrate",
+        migrationId: trackingData.migrationId,
         totalProcessed: 0,
         successful: 0,
         failed: 0
@@ -1298,7 +1503,7 @@ exports.migrateTimelines = async (req, res) => {
     }
 
     // Pre-load all reference data
-    console.log('Pre-loading reference data...');
+    console.log('🔄 Pre-loading reference data...');
     let sourceCompanyId, targetCompanyId;
     
     try {
@@ -1311,46 +1516,64 @@ exports.migrateTimelines = async (req, res) => {
       targetCompanyId = targetCompanies?.[0]?.Gsid;
 
       if (!sourceCompanyId || !targetCompanyId) {
-        return res.status(500).json({ message: "Could not get company IDs for API calls" });
+        const error = new Error("Could not get company IDs for API calls");
+        MigrationTracker.trackError(trackingData, error, 'Reference data loading');
+        
+        const finalTracking = MigrationTracker.finalizeTracking(trackingData);
+        await MigrationTracker.saveTrackingData(finalTracking);
+        
+        return res.status(500).json({ 
+          message: "Could not get company IDs for API calls",
+          migrationId: trackingData.migrationId
+        });
       }
 
-      console.log(`Using source company ID: ${sourceCompanyId}`);
-      console.log(`Using target company ID: ${targetCompanyId}`);
+      console.log(`🏢 Using source company ID: ${sourceCompanyId}`);
+      console.log(`🏢 Using target company ID: ${targetCompanyId}`);
     } catch (error) {
-      console.error('Error pre-loading reference data:', error.message);
+      console.error('❌ Error pre-loading reference data:', error.message);
+      MigrationTracker.trackError(trackingData, error, 'Reference data loading');
+      
+      const finalTracking = MigrationTracker.finalizeTracking(trackingData);
+      await MigrationTracker.saveTrackingData(finalTracking);
+      
       return res.status(500).json({
         message: "Failed to load reference data",
+        migrationId: trackingData.migrationId,
         error: error.message
       });
     }
 
-    // Initialize caches
-    const userCache = {};
-    const companyCache = {};
-    const activityCache = {};
-    const milestoneCache = {};
+    // Initialize caches with estimated sizes for better memory management
+    const userCache = new Map();
+    const companyCache = new Map();
+    const activityCache = new Map();
+    const milestoneCache = new Map();
     
-    // Process with improved batch handling
-    const BATCH_SIZE = 3; // Smaller batch size for better stability
+    // Optimized batch processing for large datasets
+    const BATCH_SIZE = 20; // Increased from 3 to 20 for better throughput
     const batches = [];
 
     for (let i = 0; i < allContent.length; i += BATCH_SIZE) {
       batches.push(allContent.slice(i, i + BATCH_SIZE));
     }
 
-    let successCount = 0;
-    let failureCount = 0;
-    let processedCount = 0;
-    const failedEntries = [];
+    console.log(`⚙️ Processing ${batches.length} batches of up to ${BATCH_SIZE} items each...`);
+    console.log(`⏱️ Estimated time: ${Math.ceil(batches.length * 2)} seconds (assuming 2s per batch)`);
 
-    console.log(`Processing ${batches.length} batches of up to ${BATCH_SIZE} items each...`);
-
-    // Process batches sequentially for better control
+    // Process batches with progress reporting
+    const progressReportInterval = Math.max(1, Math.floor(batches.length / 20)); // Report every 5%
+    
     for (const [batchIndex, batch] of batches.entries()) {
-      console.log(`Processing batch ${batchIndex + 1}/${batches.length}...`);
+      const isProgressReport = (batchIndex + 1) % progressReportInterval === 0 || batchIndex === batches.length - 1;
+      
+      if (isProgressReport) {
+        const progress = ((batchIndex + 1) / batches.length * 100).toFixed(1);
+        console.log(`🔄 Processing batch ${batchIndex + 1}/${batches.length} (${progress}%)...`);
+      }
 
       try {
-        // Process the batch
+        // Process the batch with tracking
         const batchResults = await processBatch(
           batch,
           userCache,
@@ -1362,80 +1585,128 @@ exports.migrateTimelines = async (req, res) => {
           sourceInstanceUrl,
           sourceInstanceToken,
           sourceCompanyId,
-          targetCompanyId
+          targetCompanyId,
+          trackingData,
+          batchIndex
         );
 
-        // Count results
-        batchResults.forEach(result => {
-          processedCount++;
-          if (result.success) {
-            successCount++;
-          } else {
-            failureCount++;
-            failedEntries.push({
-              entryId: result.entryId,
-              reason: result.reason
-            });
+        if (isProgressReport) {
+          const processed = trackingData.statistics.successCount + trackingData.statistics.failureCount;
+          const successRate = processed > 0 ? ((trackingData.statistics.successCount / processed) * 100).toFixed(1) : 0;
+          console.log(`✅ Progress: ${processed}/${allContent.length} (${successRate}% success rate)`);
+          
+          // Memory management - clear caches periodically
+          if ((batchIndex + 1) % 100 === 0) {
+            console.log('🧹 Clearing caches to manage memory...');
+            userCache.clear();
+            companyCache.clear();
+            activityCache.clear();
+            milestoneCache.clear();
           }
-        });
+        }
 
-        console.log(`Batch ${batchIndex + 1} completed. Progress: ${processedCount}/${allContent.length} (${successCount} successful, ${failureCount} failed)`);
-
-        // Longer delay between batches to be gentle on the API
+        // Reduced delay for better throughput
         if (batchIndex < batches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
 
       } catch (error) {
-        console.error(`Error processing batch ${batchIndex + 1}:`, error.message);
+        console.error(`❌ Error processing batch ${batchIndex + 1}:`, error.message);
+        MigrationTracker.trackError(trackingData, error, `Batch ${batchIndex + 1} processing`);
+        
         // Mark all items in this batch as failed
-        batch.forEach(() => {
-          processedCount++;
-          failureCount++;
-          failedEntries.push({
-            entryId: 'unknown',
-            reason: `Batch processing error: ${error.message}`
+        batch.forEach((entry) => {
+          MigrationTracker.trackFailure(trackingData, entry.id, `Batch processing error: ${error.message}`, {
+            activityType: entry?.meta?.activityTypeId || null,
+            companyName: entry.contexts?.[0]?.lbl || null,
+            authorEmail: entry.author?.email || null,
+            subject: entry.note?.subject || null
           });
         });
       }
     }
 
-    // Clear caches to free memory - Fixed variable names
-    Object.keys(userCache).forEach(key => delete userCache[key]);
-    Object.keys(companyCache).forEach(key => delete companyCache[key]);
-    Object.keys(activityCache).forEach(key => delete activityCache[key]);
-    Object.keys(milestoneCache).forEach(key => delete milestoneCache[key]);
+    // Clear caches to free memory
+    userCache.clear();
+    companyCache.clear();
+    activityCache.clear();
+    milestoneCache.clear();
 
-    console.log('Migration completed!');
+    // Finalize tracking and generate summary
+    const finalTrackingData = MigrationTracker.finalizeTracking(trackingData);
+    
+    // Save tracking data to files
+    const savedFiles = await MigrationTracker.saveTrackingData(finalTrackingData);
+    
+    // Print console summary
+    MigrationTracker.printConsoleSummary(finalTrackingData);
+
+    console.log('🎉 Migration completed!');
 
     const response = {
-      message: "Migration completed",
-      totalProcessed: allContent.length,
-      successful: successCount,
-      failed: failureCount,
-      details: {
-        userCacheSize: Object.keys(userCache).length,
-        companyCacheSize: Object.keys(companyCache).length,
-        activityCacheSize: Object.keys(activityCache).length
+      message: "Migration completed successfully",
+      migrationId: finalTrackingData.migrationId,
+      totalProcessed: finalTrackingData.totalProcessed,
+      successful: finalTrackingData.statistics.successCount,
+      failed: finalTrackingData.statistics.failureCount,
+      duration: finalTrackingData.summary.migrationOverview.totalDuration,
+      successRate: finalTrackingData.summary.statistics.successRate,
+      summary: finalTrackingData.summary,
+      files: savedFiles,
+      performance: {
+        activitiesPerSecond: finalTrackingData.summary.statistics.activitiesPerSecond,
+        averageTimePerBatch: finalTrackingData.summary.statistics.averageTimePerBatch,
+        totalBatches: batches.length,
+        batchSize: BATCH_SIZE,
+        pageSize: PAGE_SIZE
+      },
+      nextSteps: {
+        recommendedNextBatch: Math.min(50000, maxActivities + 10000),
+        totalActivitiesProcessed: finalTrackingData.totalProcessed,
+        readyForNextPhase: finalTrackingData.statistics.successCount > (finalTrackingData.totalProcessed * 0.8)
       }
     };
 
-    // Include failed entries if there are any (but limit to first 50 to avoid large responses)
-    if (failedEntries.length > 0) {
-      response.failedEntries = failedEntries.slice(0, 50);
-      if (failedEntries.length > 50) {
-        response.note = `Showing first 50 of ${failedEntries.length} failed entries`;
+    // Include sample of failed entries if there are any (limit to first 20 for larger batches)
+    if (finalTrackingData.failedMigrations.length > 0) {
+      response.sampleFailedEntries = finalTrackingData.failedMigrations.slice(0, 20).map(failure => ({
+        sourceActivityId: failure.sourceActivityId,
+        reason: failure.reason,
+        errorCode: failure.errorCode,
+        companyName: failure.companyName,
+        authorEmail: failure.authorEmail
+      }));
+      
+      if (finalTrackingData.failedMigrations.length > 20) {
+        response.note = `Showing first 20 of ${finalTrackingData.failedMigrations.length} failed entries. Check log files for complete details.`;
       }
     }
 
     res.status(200).json(response);
 
   } catch (error) {
-    console.error("Migration error:", error.message);
+    console.error("❌ Migration error:", error.message);
+    MigrationTracker.trackError(trackingData, error, 'Main migration process');
+    
+    // Finalize tracking even in case of error
+    const finalTrackingData = MigrationTracker.finalizeTracking(trackingData);
+    await MigrationTracker.saveTrackingData(finalTrackingData);
+    MigrationTracker.printConsoleSummary(finalTrackingData);
 
     res.status(500).json({
       message: "Error during migration",
-      error: error.message
+      migrationId: finalTrackingData.migrationId,
+      error: error.message,
+      partialResults: {
+        totalProcessed: finalTrackingData.totalProcessed,
+        successful: finalTrackingData.statistics.successCount,
+        failed: finalTrackingData.statistics.failureCount,
+        duration: finalTrackingData.summary?.migrationOverview?.totalDuration || 'Unknown'
+      },
+      nextSteps: {
+        canRetryFromBatch: Math.floor(finalTrackingData.totalProcessed / BATCH_SIZE),
+        recommendRestart: finalTrackingData.statistics.successCount < (finalTrackingData.totalProcessed * 0.5)
+      }
     });
   }
 };
