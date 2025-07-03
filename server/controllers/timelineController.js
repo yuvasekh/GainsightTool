@@ -135,7 +135,9 @@ const MigrationTracker = {
       },
       batchTiming: [],
       errors: [],
-      summary: null
+      summary: null,
+      emailStats: {}, // New: Track stats per email
+      emailResults: {} // New: Track detailed results per email
     };
   },
 
@@ -146,9 +148,10 @@ const MigrationTracker = {
     return `migration_${timestamp}_${randomId}`;
   },
 
-  // Track successful migration
+  // Track successful migration with entry ID
   trackSuccess(trackingData, sourceActivityId, targetActivityId, activityDetails = {}) {
     const successRecord = {
+      entryId: sourceActivityId, // Added entry ID
       sourceActivityId: sourceActivityId,
       targetActivityId: targetActivityId,
       migratedAt: new Date().toISOString(),
@@ -160,12 +163,23 @@ const MigrationTracker = {
 
     trackingData.successfulMigrations.push(successRecord);
     trackingData.statistics.successCount++;
-    console.log(`✅ SUCCESS: Activity ${sourceActivityId} → ${targetActivityId}`);
+
+    // Track per email stats
+    const email = activityDetails.authorEmail || 'unknown';
+    if (!trackingData.emailStats[email]) {
+      trackingData.emailStats[email] = { successCount: 0, failureCount: 0 };
+      trackingData.emailResults[email] = { successes: [], failures: [] };
+    }
+    trackingData.emailStats[email].successCount++;
+    trackingData.emailResults[email].successes.push(successRecord);
+
+    console.log(`✅ SUCCESS: Entry ${sourceActivityId} → ${targetActivityId} (${email})`);
   },
 
-  // Track failed migration
+  // Track failed migration with entry ID
   trackFailure(trackingData, sourceActivityId, reason, activityDetails = {}) {
     const failureRecord = {
+      entryId: sourceActivityId, // Added entry ID
       sourceActivityId: sourceActivityId,
       reason: reason,
       failedAt: new Date().toISOString(),
@@ -178,7 +192,17 @@ const MigrationTracker = {
 
     trackingData.failedMigrations.push(failureRecord);
     trackingData.statistics.failureCount++;
-    console.log(`❌ FAILURE: Activity ${sourceActivityId} - ${reason}`);
+
+    // Track per email stats
+    const email = activityDetails.authorEmail || 'unknown';
+    if (!trackingData.emailStats[email]) {
+      trackingData.emailStats[email] = { successCount: 0, failureCount: 0 };
+      trackingData.emailResults[email] = { successes: [], failures: [] };
+    }
+    trackingData.emailStats[email].failureCount++;
+    trackingData.emailResults[email].failures.push(failureRecord);
+
+    console.log(`❌ FAILURE: Entry ${sourceActivityId} - ${reason} (${email})`);
   },
 
   // Categorize errors for better analysis
@@ -244,11 +268,22 @@ const MigrationTracker = {
     return trackingData;
   },
 
-  // Generate detailed summary report
+  // Generate detailed summary report with email breakdown
   generateSummary(trackingData) {
     const successRate = trackingData.totalProcessed > 0
       ? ((trackingData.statistics.successCount / trackingData.totalProcessed) * 100).toFixed(2)
       : 0;
+
+    // Generate email breakdown
+    const emailBreakdown = Object.entries(trackingData.emailStats).map(([email, stats]) => ({
+      email,
+      successCount: stats.successCount,
+      failureCount: stats.failureCount,
+      totalProcessed: stats.successCount + stats.failureCount,
+      successRate: stats.successCount + stats.failureCount > 0
+        ? ((stats.successCount / (stats.successCount + stats.failureCount)) * 100).toFixed(2) + '%'
+        : '0%'
+    })).sort((a, b) => b.totalProcessed - a.totalProcessed);
 
     const summary = {
       migrationOverview: {
@@ -265,8 +300,10 @@ const MigrationTracker = {
         successRate: `${successRate}%`,
         batchesProcessed: trackingData.statistics.batchesProcessed,
         averageTimePerActivity: `${trackingData.statistics.averageTimePerActivity}ms`,
-        unexpectedErrors: trackingData.errors.length
+        unexpectedErrors: trackingData.errors.length,
+        emailsProcessed: Object.keys(trackingData.emailStats).length
       },
+      emailBreakdown: emailBreakdown,
       performance: {
         totalBatches: trackingData.batchTiming.length,
         fastestBatch: this.getFastestBatch(trackingData.batchTiming),
@@ -364,7 +401,17 @@ const MigrationTracker = {
       await fs.writeFile(summaryFilePath, JSON.stringify(trackingData.summary, null, 2));
       console.log(`📋 Migration summary saved to: ${summaryFilePath}`);
 
-      return { logFile: filePath, summaryFile: summaryFilePath };
+      // Save email-specific reports
+      const emailReportFileName = `migration_email_breakdown_${trackingData.migrationId}.json`;
+      const emailReportFilePath = path.join(outputDir, emailReportFileName);
+      await fs.writeFile(emailReportFilePath, JSON.stringify(trackingData.emailResults, null, 2));
+      console.log(`📧 Email breakdown report saved to: ${emailReportFilePath}`);
+
+      return {
+        logFile: filePath,
+        summaryFile: summaryFilePath,
+        emailBreakdownFile: emailReportFilePath
+      };
 
     } catch (error) {
       console.error('Error saving tracking data:', error.message);
@@ -372,7 +419,7 @@ const MigrationTracker = {
     }
   },
 
-  // Print console summary
+  // Print console summary with email breakdown
   printConsoleSummary(trackingData) {
     const summary = trackingData.summary;
 
@@ -386,6 +433,14 @@ const MigrationTracker = {
     console.log(`❌ Failed: ${summary.statistics.failedMigrations}`);
     console.log(`📈 Success Rate: ${summary.statistics.successRate}`);
     console.log(`⚡ Average Time per Activity: ${summary.statistics.averageTimePerActivity}`);
+    console.log(`📧 Emails Processed: ${summary.statistics.emailsProcessed}`);
+
+    if (summary.emailBreakdown && summary.emailBreakdown.length > 0) {
+      console.log('\n📧 Email Breakdown:');
+      summary.emailBreakdown.forEach(emailStats => {
+        console.log(`  • ${emailStats.email}: ${emailStats.totalProcessed} total (${emailStats.successCount} ✅, ${emailStats.failureCount} ❌) - ${emailStats.successRate} success`);
+      });
+    }
 
     if (summary.errorAnalysis.totalErrors > 0) {
       console.log('\n📋 Error Breakdown:');
@@ -397,6 +452,7 @@ const MigrationTracker = {
     console.log('='.repeat(80) + '\n');
   }
 };
+
 // Your existing constants and mappings remain the same
 const ACTIVITY_TYPE_MAPPING = [
   { "Old Verizon Activity Type Name": "3G At-Risk Migration Update", "Activity Type": "Update", "Sub-Activity Type": "" },
@@ -427,6 +483,7 @@ const ACTIVITY_TYPE_MAPPING = [
   { "Old Verizon Activity Type Name": "SSD Close Out", "Activity Type": "Update", "Sub-Activity Type": "SSD Close Out" },
   { "Old Verizon Activity Type Name": "Update", "Activity Type": "Update", "Sub-Activity Type": "" }
 ];
+
 const MILESTONE_TYPE_MAPPING = [
   { "Old Milestone Type": "Adopting", "New Milestone Type": "Adopting" },
   { "Old Milestone Type": "CSM Assigned", "New Milestone Type": "CSM Transition" },
@@ -451,6 +508,7 @@ const MILESTONE_TYPE_MAPPING = [
   { "Old Milestone Type": "Upcoming Renewal", "New Milestone Type": "Lifecycle Event Created" },
   { "Old Milestone Type": "Will Churn", "New Milestone Type": "Will Churn" }
 ];
+
 // Global Cache Variables (keeping your existing structure)
 let userDataCache = null;
 let companyDataCache = null;
@@ -464,7 +522,36 @@ let targetMilestoneTypesCache = null;
 // Claude added - Cookie cache for playwright integration
 const cookieCache = new Map(); // email -> cookie string
 
-// All your existing functions remain unchanged
+// Function to read emails from JSON file
+async function readEmailsFromFile() {
+  const EMAILS_JSON_FILE = path.join(__dirname, 'emails.json');
+
+  try {
+    const fileExists = await fs.access(EMAILS_JSON_FILE).then(() => true).catch(() => false);
+    if (!fileExists) {
+      console.log('❌ emails.json file does not exist. Creating example file...');
+      return []
+    }
+    const fileContent = await fs.readFile(EMAILS_JSON_FILE, 'utf8');
+    const emailData = JSON.parse(fileContent);
+
+    // Support both array format and object with emails property
+    if (Array.isArray(emailData)) {
+      return emailData;
+    } else if (emailData.emails && Array.isArray(emailData.emails)) {
+      return emailData.emails;
+    } else {
+      throw new Error('Invalid emails.json format. Expected array or object with emails property.');
+    }
+
+  } catch (error) {
+    console.error('❌ Error reading emails from file:', error.message);
+    console.log('📝 Using fallback email: eoin.mcmahon@verizonconnect.com');
+    return ['eoin.mcmahon@verizonconnect.com'];
+  }
+}
+
+// All your existing functions remain unchanged (normalizeString, getAllTargetUsers, etc.)
 function normalizeString(str) {
   if (!str) return '';
   return str.toString().toLowerCase().trim().replace(/\s+/g, ' ');
@@ -494,7 +581,6 @@ async function getAllTargetUsers(instanceUrl, sessionCookie) {
   }
 }
 
-
 async function readUsersFromFile() {
   try {
     const fileExists = await fs.access(USERS_JSON_FILE).then(() => true).catch(() => false);
@@ -513,6 +599,7 @@ async function readUsersFromFile() {
     return null;
   }
 }
+
 const COMPANIES_JSON_FILE = path.join(__dirname, 'targetcompanies.json');
 
 async function getAllCompanies(instanceUrl, sessionCookie) {
@@ -814,7 +901,6 @@ async function getMilestoneTypeMapping(oldMilestoneTypeId, sourceInstanceUrl, so
   }
 }
 
-
 // Claude added - Function to get user cookie via playwright
 async function getUserCookieViaPlaywright(targetEmail) {
   console.log(`🎭 Getting cookie for user: ${targetEmail} via Playwright`);
@@ -1011,7 +1097,6 @@ async function getUserIdByEmail(email, instanceUrl, sessionCookie) {
     return "1P01E316G9DAPFOLE6SOOUG71XRMN5F3PLER";
   }
 }
-
 
 async function getCompanyIdByName(companyName, instanceUrl, sessionCookie) {
   try {
@@ -1568,265 +1653,18 @@ async function processBatch(
   return results;
 }
 
-// Main migration function with enhanced tracking
-exports.migrateTimelines = async (req, res) => {
-  // Initialize tracking
-  const trackingData = MigrationTracker.initializeTracking();
-  try {
-    const { sourceInstanceUrl, sourceInstanceToken, targetInstanceUrl, targetInstanceToken, maxActivities = 7 } = req.body;
-
-    if (!sourceInstanceUrl || !sourceInstanceToken || !targetInstanceUrl || !targetInstanceToken) {
-      MigrationTracker.trackError(trackingData, new Error('Missing instance information'), 'Initialization');
-      return res.status(400).json({ message: "Missing source or target instance information" });
-    }
-
-    console.log(`🎯 Starting timeline migration with ID: ${trackingData.migrationId}`);
-    console.log(`📊 Target: ${maxActivities} activities`);
-    let page = 0;
-    const PAGE_SIZE = 100; // Increased from 7 to 100 for better efficiency
-    let totalFetched = 0;
-
-    // Fetch all timelines with optimized pagination
-    console.log('📥 Fetching timeline data...');
-
-    let email = "eoin.mcmahon@verizonconnect.com"
-    let allContent = await fetchTimeLinesByEmail(sourceInstanceUrl, sourceInstanceToken, email);
-    trackingData.statistics.totalCount = allContent.length;
-    console.log(`📊 Total timeline entries to migrate: ${allContent.length}`);
-
-    if (allContent.length === 0) {
-      const finalTracking = MigrationTracker.finalizeTracking(trackingData);
-      await MigrationTracker.saveTrackingData(finalTracking);
-
-      return res.status(200).json({
-        message: "No timeline entries found to migrate",
-        migrationId: trackingData.migrationId,
-        totalProcessed: 0,
-        successful: 0,
-        failed: 0
-      });
-    }
-
-    // Pre-load all reference data
-    console.log('🔄 Pre-loading reference data...');
-    let sourceCompanyId, targetCompanyId;
-
-    try {
-      const [sourceCompanies, targetCompanies] = await Promise.all([
-        getAllCompanies(sourceInstanceUrl, sourceInstanceToken),
-        getAllCompanies(targetInstanceUrl, targetInstanceToken)
-      ]);
-
-      sourceCompanyId = sourceCompanies?.[0]?.GSID;
-      targetCompanyId = targetCompanies?.[0]?.GSID;
-
-      if (!sourceCompanyId || !targetCompanyId) {
-        const error = new Error("Could not get company IDs for API calls");
-        MigrationTracker.trackError(trackingData, error, 'Reference data loading');
-
-        const finalTracking = MigrationTracker.finalizeTracking(trackingData);
-        await MigrationTracker.saveTrackingData(finalTracking);
-
-        return res.status(500).json({
-          message: "Could not get company IDs for API calls",
-          migrationId: trackingData.migrationId
-        });
-      }
-
-      console.log(`🏢 Using source company ID: ${sourceCompanyId}`);
-      console.log(`🏢 Using target company ID: ${targetCompanyId}`);
-    } catch (error) {
-      console.error('❌ Error pre-loading reference data:', error.message);
-      MigrationTracker.trackError(trackingData, error, 'Reference data loading');
-
-      const finalTracking = MigrationTracker.finalizeTracking(trackingData);
-      await MigrationTracker.saveTrackingData(finalTracking);
-
-      return res.status(500).json({
-        message: "Failed to load reference data",
-        migrationId: trackingData.migrationId,
-        error: error.message
-      });
-    }
-
-    // Initialize caches with estimated sizes for better memory management
-    const userCache = new Map();
-    const companyCache = new Map();
-    const activityCache = new Map();
-    const milestoneCache = new Map();
-
-    // Optimized batch processing for large datasets
-    const BATCH_SIZE = 20; // Increased from 3 to 20 for better throughput
-    const batches = [];
-
-    for (let i = 0; i < allContent.length; i += BATCH_SIZE) {
-      batches.push(allContent.slice(i, i + BATCH_SIZE));
-    }
-
-    console.log(`⚙️ Processing ${batches.length} batches of up to ${BATCH_SIZE} items each...`);
-    console.log(`⏱️ Estimated time: ${Math.ceil(batches.length * 2)} seconds (assuming 2s per batch)`);
-
-    // Process batches with progress reporting
-    const progressReportInterval = Math.max(1, Math.floor(batches.length / 20)); // Report every 5%
-
-    for (const [batchIndex, batch] of batches.entries()) {
-      const isProgressReport = (batchIndex + 1) % progressReportInterval === 0 || batchIndex === batches.length - 1;
-
-      if (isProgressReport) {
-        const progress = ((batchIndex + 1) / batches.length * 100).toFixed(1);
-        console.log(`🔄 Processing batch ${batchIndex + 1}/${batches.length} (${progress}%)...`);
-      }
-
-      try {
-        // Process the batch with tracking
-        const batchResults = await processBatch(
-          batch,
-          userCache,
-          companyCache,
-          activityCache,
-          milestoneCache,
-          targetInstanceUrl,
-          targetInstanceToken,
-          sourceInstanceUrl,
-          sourceInstanceToken,
-          sourceCompanyId,
-          targetCompanyId,
-          trackingData,
-          batchIndex
-        );
-
-        if (isProgressReport) {
-          const processed = trackingData.statistics.successCount + trackingData.statistics.failureCount;
-          const successRate = processed > 0 ? ((trackingData.statistics.successCount / processed) * 100).toFixed(1) : 0;
-          console.log(`✅ Progress: ${processed}/${allContent.length} (${successRate}% success rate)`);
-
-          // Memory management - clear caches periodically
-          if ((batchIndex + 1) % 100 === 0) {
-            console.log('🧹 Clearing caches to manage memory...');
-            userCache.clear();
-            companyCache.clear();
-            activityCache.clear();
-            milestoneCache.clear();
-          }
-        }
-
-        // Reduced delay for better throughput
-        if (batchIndex < batches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-
-      } catch (error) {
-        console.error(`❌ Error processing batch ${batchIndex + 1}:`, error.message);
-        MigrationTracker.trackError(trackingData, error, `Batch ${batchIndex + 1} processing`);
-
-        // Mark all items in this batch as failed
-        batch.forEach((entry) => {
-          MigrationTracker.trackFailure(trackingData, entry.id, `Batch processing error: ${error.message}`, {
-            activityType: entry?.meta?.activityTypeId || null,
-            companyName: entry.contexts?.[0]?.lbl || null,
-            authorEmail: entry.author?.email || null,
-            subject: entry.note?.subject || null
-          });
-        });
-      }
-    }
-
-    // Clear caches to free memory
-    userCache.clear();
-    companyCache.clear();
-    activityCache.clear();
-    milestoneCache.clear();
-
-    // Finalize tracking and generate summary
-    const finalTrackingData = MigrationTracker.finalizeTracking(trackingData);
-
-    // Save tracking data to files
-    const savedFiles = await MigrationTracker.saveTrackingData(finalTrackingData);
-
-    // Print console summary
-    MigrationTracker.printConsoleSummary(finalTrackingData);
-
-    console.log('🎉 Migration completed!');
-
-    const response = {
-      message: "Migration completed successfully",
-      migrationId: finalTrackingData.migrationId,
-      totalProcessed: finalTrackingData.totalProcessed,
-      successful: finalTrackingData.statistics.successCount,
-      failed: finalTrackingData.statistics.failureCount,
-      duration: finalTrackingData.summary.migrationOverview.totalDuration,
-      successRate: finalTrackingData.summary.statistics.successRate,
-      summary: finalTrackingData.summary,
-      files: savedFiles,
-      performance: {
-        activitiesPerSecond: finalTrackingData.summary.statistics.activitiesPerSecond,
-        averageTimePerBatch: finalTrackingData.summary.statistics.averageTimePerBatch,
-        totalBatches: batches.length,
-        batchSize: BATCH_SIZE,
-        pageSize: PAGE_SIZE
-      },
-      nextSteps: {
-        recommendedNextBatch: Math.min(50000, maxActivities + 10000),
-        totalActivitiesProcessed: finalTrackingData.totalProcessed,
-        readyForNextPhase: finalTrackingData.statistics.successCount > (finalTrackingData.totalProcessed * 0.8)
-      }
-    };
-
-    // Include sample of failed entries if there are any (limit to first 20 for larger batches)
-    if (finalTrackingData.failedMigrations.length > 0) {
-      response.sampleFailedEntries = finalTrackingData.failedMigrations.slice(0, 20).map(failure => ({
-        sourceActivityId: failure.sourceActivityId,
-        reason: failure.reason,
-        errorCode: failure.errorCode,
-        companyName: failure.companyName,
-        authorEmail: failure.authorEmail
-      }));
-
-      if (finalTrackingData.failedMigrations.length > 20) {
-        response.note = `Showing first 20 of ${finalTrackingData.failedMigrations.length} failed entries. Check log files for complete details.`;
-      }
-    }
-
-    res.status(200).json(response);
-
-  } catch (error) {
-    console.error("❌ Migration error:", error.message);
-    MigrationTracker.trackError(trackingData, error, 'Main migration process');
-
-    // Finalize tracking even in case of error
-    const finalTrackingData = MigrationTracker.finalizeTracking(trackingData);
-    await MigrationTracker.saveTrackingData(finalTrackingData);
-    MigrationTracker.printConsoleSummary(finalTrackingData);
-
-    res.status(500).json({
-      message: "Error during migration",
-      migrationId: finalTrackingData.migrationId,
-      error: error.message,
-      partialResults: {
-        totalProcessed: finalTrackingData.totalProcessed,
-        successful: finalTrackingData.statistics.successCount,
-        failed: finalTrackingData.statistics.failureCount,
-        duration: finalTrackingData.summary?.migrationOverview?.totalDuration || 'Unknown'
-      },
-      nextSteps: {
-        canRetryFromBatch: Math.floor(finalTrackingData.totalProcessed),
-        recommendRestart: finalTrackingData.statistics.successCount < (finalTrackingData.totalProcessed * 0.5)
-      }
-    });
-  }
-};
-
-
+// Claude edited - Modified fetchTimeLinesByEmail to handle single email only
 async function fetchTimeLinesByEmail(baseUrl, cookieHeader, email) {
-  console.log(baseUrl, "baseUrl")
+  console.log(`📧 Fetching timelines for email: ${email}...`);
+
   const headers = {
     'Cookie': cookieHeader,
     'Content-Type': 'application/json'
   };
-  console.log(headers, "yuva")
+
   let page = 0;
   let totalPages = 1;
-  const allData = [];
+  const emailData = [];
   const pageSize = 2000;
   const requestBody = {
     searchText: "",
@@ -1909,30 +1747,660 @@ async function fetchTimeLinesByEmail(baseUrl, cookieHeader, email) {
     contextFilter: {},
     filterContext: "GLOBAL_TIMELINE"
   };
-  while (page < totalPages) {
-    const url = `${baseUrl}/v1/ant/timeline/search/activity?page=${page}&size=${pageSize}`;
 
-    console.log(`⏳ Fetching page ${page + 1}...`);
+  try {
+    while (page < totalPages) {
+      const url = `${baseUrl}/v1/ant/timeline/search/activity?page=${page}&size=${pageSize}`;
+      console.log(`⏳ Fetching page ${page + 1} for ${email}...`);
+
+      try {
+        const response = await axios.post(url, requestBody, { headers });
+        const result = response.data.data;
+        const pageContent = result.content || [];
+        emailData.push(...pageContent);
+
+        totalPages = result.page.totalPages;
+        page++;
+
+        console.log(`✅ Page ${page}/${totalPages} for ${email}: ${pageContent.length} activities`);
+
+      } catch (err) {
+        console.error(`❌ Failed on page ${page + 1} for ${email}:`, err.response?.data || err.message);
+        break;
+      }
+    }
+
+    console.log(`📊 Total activities for ${email}: ${emailData.length}`);
+
+    return {
+      email: email,
+      totalActivities: emailData.length,
+      activities: emailData
+    };
+
+  } catch (error) {
+    console.error(`❌ Error processing ${email}:`, error.message);
+    return {
+      email: email,
+      totalActivities: 0,
+      activities: [],
+      error: error.message
+    };
+  }
+}
+
+// Claude edited - Enhanced email-by-email processing function with comprehensive reporting
+exports.migrateTimelinesPerEmail = async (req, res) => {
+  // Initialize tracking
+  const trackingData = MigrationTracker.initializeTracking();
+  try {
+    const { sourceInstanceUrl, sourceInstanceToken, targetInstanceUrl, targetInstanceToken, maxActivities = 7 } = req.body;
+
+    if (!sourceInstanceUrl || !sourceInstanceToken || !targetInstanceUrl || !targetInstanceToken) {
+      MigrationTracker.trackError(trackingData, new Error('Missing instance information'), 'Initialization');
+      return res.status(400).json({ message: "Missing source or target instance information" });
+    }
+
+    console.log(`🎯 Starting per-email timeline migration with ID: ${trackingData.migrationId}`);
+    console.log(`📊 Max activities per email: ${maxActivities}`);
+
+    // Read emails from JSON file
+    console.log('📧 Reading emails from configuration file...');
+    const emails = await readEmailsFromFile(); // Claude edited - use the existing function
+    console.log(`📝 Found ${emails.length} emails to process: ${emails.join(', ')}`);
+
+    // Claude edited - Initialize caches at the top before processing
+    const userCache = new Map();
+    const companyCache = new Map();
+    const activityCache = new Map();
+    const milestoneCache = new Map();
+    const BATCH_SIZE = 20;
+
+    // Claude edited - Pre-load all reference data BEFORE processing emails
+    console.log('🔄 Pre-loading reference data...');
+    let sourceCompanyId, targetCompanyId;
 
     try {
-      const response = await axios.post(url, requestBody, { headers });
-      console.log(response.data)
-      const result = response.data.data;
-      // console.log(result.data.data,"yuva99")
-      allData.push(...(result.content || []));
-      totalPages = result.page.totalPages;
-      page++;
-    } catch (err) {
-      console.error(`❌ Failed on page ${page + 1}:`, err.response?.data || err.message);
-      break;
+      const [sourceCompanies, targetCompanies] = await Promise.all([
+        getAllCompanies(sourceInstanceUrl, sourceInstanceToken),
+        getAllCompanies(targetInstanceUrl, targetInstanceToken)
+      ]);
+
+      sourceCompanyId = sourceCompanies?.[0]?.GSID;
+      targetCompanyId = targetCompanies?.[0]?.GSID;
+
+      if (!sourceCompanyId || !targetCompanyId) {
+        const error = new Error("Could not get company IDs for API calls");
+        MigrationTracker.trackError(trackingData, error, 'Reference data loading');
+
+        const finalTracking = MigrationTracker.finalizeTracking(trackingData);
+        await MigrationTracker.saveTrackingData(finalTracking);
+
+        return res.status(500).json({
+          message: "Could not get company IDs for API calls",
+          migrationId: trackingData.migrationId
+        });
+      }
+
+      console.log(`🏢 Using source company ID: ${sourceCompanyId}`);
+      console.log(`🏢 Using target company ID: ${targetCompanyId}`);
+    } catch (error) {
+      console.error('❌ Error pre-loading reference data:', error.message);
+      MigrationTracker.trackError(trackingData, error, 'Reference data loading');
+
+      const finalTracking = MigrationTracker.finalizeTracking(trackingData);
+      await MigrationTracker.saveTrackingData(finalTracking);
+
+      return res.status(500).json({
+        message: "Failed to load reference data",
+        migrationId: trackingData.migrationId,
+        error: error.message
+      });
     }
+
+    // Claude edited - Continue with email processing (reference data already loaded above)
+
+    // Claude edited - Initialize email-specific tracking
+    const emailResults = {};
+    let totalActivitiesProcessed = 0;
+    let totalSuccessfulMigrations = 0;
+    let totalFailedMigrations = 0;
+
+    // Process each email individually
+    for (const [emailIndex, email] of emails.entries()) {
+      console.log(`\n📧 Processing email ${emailIndex + 1}/${emails.length}: ${email}`);
+      
+      // Claude edited - Initialize email-specific tracking data
+      const emailTrackingData = MigrationTracker.initializeTracking();
+      emailTrackingData.migrationId = `${trackingData.migrationId}_email_${emailIndex + 1}`;
+      
+      try {
+        // Claude edited - Fetch timeline data for this specific email only
+        const timelineData = await fetchTimeLinesByEmail(sourceInstanceUrl, sourceInstanceToken, email);
+        const activities = timelineData.activities;
+        
+        console.log(`📊 Found ${activities.length} activities for ${email}`);
+        
+        if (activities.length === 0) {
+          console.log(`⚠️ No activities found for ${email}, skipping...`);
+          emailResults[email] = {
+            status: 'skipped',
+            reason: 'No activities found',
+            totalActivities: 0,
+            successfulMigrations: 0,
+            failedMigrations: 0,
+            migrationId: emailTrackingData.migrationId
+          };
+          continue;
+        }
+
+        // Claude edited - Process activities in batches for this email
+        const batches = [];
+        for (let i = 0; i < activities.length; i += BATCH_SIZE) {
+          batches.push(activities.slice(i, i + BATCH_SIZE));
+        }
+
+        console.log(`⚙️ Processing ${batches.length} batches for ${email} (${BATCH_SIZE} items per batch)`);
+        
+        let emailSuccessCount = 0;
+        let emailFailureCount = 0;
+
+        // Process each batch for this email
+        for (const [batchIndex, batch] of batches.entries()) {
+          console.log(`🔄 Processing batch ${batchIndex + 1}/${batches.length} for ${email}...`);
+          
+          try {
+            const batchResults = await processBatch(
+              batch,
+              userCache,
+              companyCache,
+              activityCache,
+              milestoneCache,
+              targetInstanceUrl,
+              targetInstanceToken,
+              sourceInstanceUrl,
+              sourceInstanceToken,
+              sourceCompanyId,
+              targetCompanyId,
+              emailTrackingData,
+              batchIndex
+            );
+
+            // Count successes and failures for this batch
+            batchResults.forEach(result => {
+              if (result.success) {
+                emailSuccessCount++;
+              } else {
+                emailFailureCount++;
+              }
+            });
+
+            // Small delay between batches for API rate limiting
+            if (batchIndex < batches.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+          } catch (error) {
+            console.error(`❌ Error processing batch ${batchIndex + 1} for ${email}:`, error.message);
+            MigrationTracker.trackError(emailTrackingData, error, `Batch ${batchIndex + 1} for ${email}`);
+            
+            // Mark all items in this batch as failed
+            batch.forEach((entry) => {
+              MigrationTracker.trackFailure(emailTrackingData, entry.id, `Batch processing error: ${error.message}`, {
+                activityType: entry?.meta?.activityTypeId || null,
+                companyName: entry.contexts?.[0]?.lbl || null,
+                authorEmail: entry.author?.email || null,
+                subject: entry.note?.subject || null
+              });
+              emailFailureCount++;
+            });
+          }
+        }
+
+        // Claude edited - Finalize tracking for this email
+        const finalEmailTracking = MigrationTracker.finalizeTracking(emailTrackingData);
+        
+        // Save email-specific tracking data
+        const savedFiles = await MigrationTracker.saveTrackingData(finalEmailTracking);
+        
+        // Update overall tracking data
+        trackingData.statistics.successCount += emailSuccessCount;
+        trackingData.statistics.failureCount += emailFailureCount;
+        trackingData.successfulMigrations.push(...finalEmailTracking.successfulMigrations);
+        trackingData.failedMigrations.push(...finalEmailTracking.failedMigrations);
+        
+        // Store email results
+        emailResults[email] = {
+          status: 'completed',
+          totalActivities: activities.length,
+          successfulMigrations: emailSuccessCount,
+          failedMigrations: emailFailureCount,
+          successRate: activities.length > 0 ? ((emailSuccessCount / activities.length) * 100).toFixed(2) + '%' : '0%',
+          migrationId: finalEmailTracking.migrationId,
+          duration: finalEmailTracking.summary.migrationOverview.totalDuration,
+          files: savedFiles,
+          sampleSuccesses: finalEmailTracking.successfulMigrations.slice(0, 5),
+          sampleFailures: finalEmailTracking.failedMigrations.slice(0, 5)
+        };
+
+        console.log(`✅ Completed ${email}: ${emailSuccessCount} successes, ${emailFailureCount} failures`);
+        
+        // Update totals
+        totalActivitiesProcessed += activities.length;
+        totalSuccessfulMigrations += emailSuccessCount;
+        totalFailedMigrations += emailFailureCount;
+
+      } catch (error) {
+        console.error(`❌ Error processing email ${email}:`, error.message);
+        MigrationTracker.trackError(trackingData, error, `Email processing for ${email}`);
+        
+        emailResults[email] = {
+          status: 'failed',
+          reason: error.message,
+          totalActivities: 0,
+          successfulMigrations: 0,
+          failedMigrations: 0,
+          migrationId: emailTrackingData.migrationId
+        };
+      }
+
+      // Memory management - clear caches periodically
+      if ((emailIndex + 1) % 5 === 0) {
+        console.log('🧹 Clearing caches to manage memory...');
+        userCache.clear();
+        companyCache.clear();
+        activityCache.clear();
+        milestoneCache.clear();
+      }
+    }
+
+    // Clear caches to free memory
+    userCache.clear();
+    companyCache.clear();
+    activityCache.clear();
+    milestoneCache.clear();
+
+    // Finalize overall tracking
+    trackingData.totalProcessed = totalActivitiesProcessed;
+    const finalTrackingData = MigrationTracker.finalizeTracking(trackingData);
+    
+    // Save overall tracking data
+    const savedFiles = await MigrationTracker.saveTrackingData(finalTrackingData);
+
+    // Print console summary
+    MigrationTracker.printConsoleSummary(finalTrackingData);
+
+    console.log('\n🎉 Email-by-email migration completed!');
+    console.log(`📊 Total emails processed: ${emails.length}`);
+    console.log(`📊 Total activities processed: ${totalActivitiesProcessed}`);
+    console.log(`✅ Total successful migrations: ${totalSuccessfulMigrations}`);
+    console.log(`❌ Total failed migrations: ${totalFailedMigrations}`);
+
+    // Generate comprehensive response
+    const response = {
+      message: "Email-by-email migration completed successfully",
+      migrationId: finalTrackingData.migrationId,
+      totalEmailsProcessed: emails.length,
+      totalActivitiesProcessed: totalActivitiesProcessed,
+      totalSuccessfulMigrations: totalSuccessfulMigrations,
+      totalFailedMigrations: totalFailedMigrations,
+      overallSuccessRate: totalActivitiesProcessed > 0 ? ((totalSuccessfulMigrations / totalActivitiesProcessed) * 100).toFixed(2) + '%' : '0%',
+      duration: finalTrackingData.summary.migrationOverview.totalDuration,
+      files: savedFiles,
+      emailResults: emailResults,
+      summary: {
+        completedEmails: Object.values(emailResults).filter(r => r.status === 'completed').length,
+        skippedEmails: Object.values(emailResults).filter(r => r.status === 'skipped').length,
+        failedEmails: Object.values(emailResults).filter(r => r.status === 'failed').length,
+        topPerformingEmails: Object.entries(emailResults)
+          .filter(([_, result]) => result.status === 'completed')
+          .sort(([_, a], [__, b]) => b.successfulMigrations - a.successfulMigrations)
+          .slice(0, 5)
+          .map(([email, result]) => ({
+            email,
+            successfulMigrations: result.successfulMigrations,
+            totalActivities: result.totalActivities,
+            successRate: result.successRate
+          }))
+      }
+    };
+
+    res.status(200).json(response);
+
+  } catch (error) {
+    console.error("❌ Migration error:", error.message);
+    MigrationTracker.trackError(trackingData, error, 'Main migration process');
+
+    // Finalize tracking even in case of error
+    const finalTrackingData = MigrationTracker.finalizeTracking(trackingData);
+    await MigrationTracker.saveTrackingData(finalTrackingData);
+    MigrationTracker.printConsoleSummary(finalTrackingData);
+
+    res.status(500).json({
+      message: "Error during email-by-email migration",
+      migrationId: finalTrackingData.migrationId,
+      error: error.message,
+      partialResults: {
+        totalProcessed: finalTrackingData.totalProcessed,
+        successful: finalTrackingData.statistics.successCount,
+        failed: finalTrackingData.statistics.failureCount,
+        duration: finalTrackingData.summary?.migrationOverview?.totalDuration || 'Unknown'
+      }
+    });
   }
-  console.log(`\n✅ All pages fetched.`);
-  console.log(`📝 Total activities: ${allData.length}`);
-  // console.log(`📁 Saved to: ${outputPath}`);
-  return allData
-  // const outputPath = path.join(__dirname, 'all_timeline_data.json');
-  // fs.writeFileSync(outputPath, JSON.stringify(allData, null, 2));
+};
+
+// Main migration function with enhanced tracking and multi-email support
+exports.migrateTimelines = async (req, res) => {
+  // Initialize tracking
+  const trackingData = MigrationTracker.initializeTracking();
+  try {
+    const { sourceInstanceUrl, sourceInstanceToken, targetInstanceUrl, targetInstanceToken, maxActivities = 7 } = req.body;
+
+    if (!sourceInstanceUrl || !sourceInstanceToken || !targetInstanceUrl || !targetInstanceToken) {
+      MigrationTracker.trackError(trackingData, new Error('Missing instance information'), 'Initialization');
+      return res.status(400).json({ message: "Missing source or target instance information" });
+    }
+
+    console.log(`🎯 Starting timeline migration with ID: ${trackingData.migrationId}`);
+    console.log(`📊 Target: ${maxActivities} activities`);
+
+    // Read emails from JSON file
+    console.log('📧 Reading emails from configuration file...');
+    const emails = ["eoin.mcmahon@verizonconnect.com", "jihyun.kim.schreiber@verizonconnect.com"]
+    console.log(`📝 Found ${emails.length} emails to process: ${emails.join(', ')}`);
+
+    // Claude edited - Initialize caches at the top before processing
+    const userCache = new Map();
+    const companyCache = new Map();
+    const activityCache = new Map();
+    const milestoneCache = new Map();
+
+    // Claude edited - Pre-load all reference data BEFORE processing emails
+    console.log('🔄 Pre-loading reference data...');
+    let sourceCompanyId, targetCompanyId;
+
+    try {
+      const [sourceCompanies, targetCompanies] = await Promise.all([
+        getAllCompanies(sourceInstanceUrl, sourceInstanceToken),
+        getAllCompanies(targetInstanceUrl, targetInstanceToken)
+      ]);
+
+      sourceCompanyId = sourceCompanies?.[0]?.GSID;
+      targetCompanyId = targetCompanies?.[0]?.GSID;
+
+      if (!sourceCompanyId || !targetCompanyId) {
+        const error = new Error("Could not get company IDs for API calls");
+        MigrationTracker.trackError(trackingData, error, 'Reference data loading');
+
+        const finalTracking = MigrationTracker.finalizeTracking(trackingData);
+        await MigrationTracker.saveTrackingData(finalTracking);
+
+        return res.status(500).json({
+          message: "Could not get company IDs for API calls",
+          migrationId: trackingData.migrationId
+        });
+      }
+
+      console.log(`🏢 Using source company ID: ${sourceCompanyId}`);
+      console.log(`🏢 Using target company ID: ${targetCompanyId}`);
+    } catch (error) {
+      console.error('❌ Error pre-loading reference data:', error.message);
+      MigrationTracker.trackError(trackingData, error, 'Reference data loading');
+
+      const finalTracking = MigrationTracker.finalizeTracking(trackingData);
+      await MigrationTracker.saveTrackingData(finalTracking);
+
+      return res.status(500).json({
+        message: "Failed to load reference data",
+        migrationId: trackingData.migrationId,
+        error: error.message
+      });
+    }
+
+    // Claude edited - Process emails one by one without loading all data upfront
+    console.log('📥 Processing emails one by one...');
+    console.log(emails);
+    
+    var totalActivitiesProcessed = 0;
+    var emailBreakdown = {};
+
+    // Process each email individually - fetch, process, then move to next
+    for (var i = 0; i < emails.length; i++) {
+      userCookie=""
+      const email = emails[i];
+      console.log(`\n📧 Processing email ${i + 1}/${emails.length}: ${email}`);
+      
+      try {
+        // Fetch timeline data for this specific email only
+        const timelineData = await fetchTimeLinesByEmail(sourceInstanceUrl, sourceInstanceToken, email);
+        const activities = timelineData.activities;
+        
+        console.log(`📊 Found ${activities.length} activities for ${email}`);
+        
+        if (activities.length === 0) {
+          console.log(`⚠️ No activities found for ${email}, skipping...`);
+          emailBreakdown[email] = {
+            totalActivities: 0,
+            successfulMigrations: 0,
+            failedMigrations: 0,
+            status: 'skipped'
+          };
+          continue;
+        }
+
+        // Process activities in batches for this email immediately
+        const BATCH_SIZE = 20;
+        const batches = [];
+        for (let j = 0; j < activities.length; j += BATCH_SIZE) {
+          batches.push(activities.slice(j, j + BATCH_SIZE));
+        }
+
+        console.log(`⚙️ Processing ${batches.length} batches for ${email} (${BATCH_SIZE} items per batch)`);
+        
+        let emailSuccessCount = 0;
+        let emailFailureCount = 0;
+
+        // Process each batch for this email
+        for (const [batchIndex, batch] of batches.entries()) {
+          console.log(`🔄 Processing batch ${batchIndex + 1}/${batches.length} for ${email}...`);
+          
+          try {
+            const batchResults = await processBatch(
+              batch,
+              userCache,
+              companyCache,
+              activityCache,
+              milestoneCache,
+              targetInstanceUrl,
+              targetInstanceToken,
+              sourceInstanceUrl,
+              sourceInstanceToken,
+              sourceCompanyId,
+              targetCompanyId,
+              trackingData,
+              batchIndex
+            );
+
+            // Count successes and failures for this batch
+            batchResults.forEach(result => {
+              if (result.success) {
+                emailSuccessCount++;
+              } else {
+                emailFailureCount++;
+              }
+            });
+
+            // Small delay between batches for API rate limiting
+            if (batchIndex < batches.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+
+          } catch (error) {
+            console.error(`❌ Error processing batch ${batchIndex + 1} for ${email}:`, error.message);
+            
+            // Mark all items in this batch as failed
+            batch.forEach((entry) => {
+              MigrationTracker.trackFailure(trackingData, entry.id, `Batch processing error: ${error.message}`, {
+                activityType: entry?.meta?.activityTypeId || null,
+                companyName: entry.contexts?.[0]?.lbl || null,
+                authorEmail: entry.author?.email || null,
+                subject: entry.note?.subject || null
+              });
+              emailFailureCount++;
+            });
+          }
+        }
+
+        // Store email results
+        emailBreakdown[email] = {
+          totalActivities: activities.length,
+          successfulMigrations: emailSuccessCount,
+          failedMigrations: emailFailureCount,
+          successRate: activities.length > 0 ? ((emailSuccessCount / activities.length) * 100).toFixed(2) + '%' : '0%',
+          status: 'completed'
+        };
+
+        console.log(`✅ Completed ${email}: ${emailSuccessCount} successes, ${emailFailureCount} failures`);
+        totalActivitiesProcessed += activities.length;
+
+      } catch (error) {
+        console.error(`❌ Error processing email ${email}:`, error.message);
+        MigrationTracker.trackError(trackingData, error, `Email processing for ${email}`);
+        
+        emailBreakdown[email] = {
+          totalActivities: 0,
+          successfulMigrations: 0,
+          failedMigrations: 0,
+          status: 'failed',
+          error: error.message
+        };
+      }
+
+      // Memory management - clear caches after each email
+      if ((i + 1) % 3 === 0) {
+        console.log('🧹 Clearing caches to manage memory...');
+        userCache.clear();
+        companyCache.clear();
+        activityCache.clear();
+        milestoneCache.clear();
+      }
+    }
+
+    trackingData.statistics.totalCount = totalActivitiesProcessed;
+
+    console.log(`📊 Total timeline entries processed: ${totalActivitiesProcessed}`);
+    console.log(`📧 Emails processed: ${emails.length}`);
+
+    if (totalActivitiesProcessed === 0) {
+      const finalTracking = MigrationTracker.finalizeTracking(trackingData);
+      await MigrationTracker.saveTrackingData(finalTracking);
+
+      return res.status(200).json({
+        message: "No timeline entries found to migrate",
+        migrationId: trackingData.migrationId,
+        totalProcessed: 0,
+        successful: 0,
+        failed: 0,
+        emailBreakdown: emailBreakdown
+      });
+    }
+
+    // Claude edited - Reference data already loaded above, clear caches to free memory at the end
+    userCache.clear();
+    companyCache.clear();
+    activityCache.clear();
+    milestoneCache.clear();
+
+    // Finalize tracking and generate summary
+    const finalTrackingData = MigrationTracker.finalizeTracking(trackingData);
+
+    // Save tracking data to files
+    const savedFiles = await MigrationTracker.saveTrackingData(finalTrackingData);
+
+    // Print console summary
+    MigrationTracker.printConsoleSummary(finalTrackingData);
+
+    console.log('🎉 Migration completed!');
+
+    const response = {
+      message: "Migration completed successfully",
+      migrationId: finalTrackingData.migrationId,
+      totalProcessed: finalTrackingData.totalProcessed,
+      successful: finalTrackingData.statistics.successCount,
+      failed: finalTrackingData.statistics.failureCount,
+      duration: finalTrackingData.summary.migrationOverview.totalDuration,
+      successRate: finalTrackingData.summary.statistics.successRate,
+      summary: finalTrackingData.summary,
+      files: savedFiles,
+      emailBreakdown: emailBreakdown,
+      performance: {
+        activitiesPerSecond: finalTrackingData.summary.statistics.activitiesPerSecond,
+        averageTimePerBatch: finalTrackingData.summary.statistics.averageTimePerBatch,
+        emailsProcessed: emails.length,
+        pageSize: 2000
+      },
+      nextSteps: {
+        totalActivitiesProcessed: finalTrackingData.totalProcessed,
+        readyForNextPhase: finalTrackingData.statistics.successCount > (finalTrackingData.totalProcessed * 0.8)
+      }
+    };
+
+    // Include sample of failed entries if there are any (limit to first 20 for larger batches)
+    if (finalTrackingData.failedMigrations.length > 0) {
+      response.sampleFailedEntries = finalTrackingData.failedMigrations.slice(0, 20).map(failure => ({
+        entryId: failure.entryId, // Added entry ID
+        sourceActivityId: failure.sourceActivityId,
+        reason: failure.reason,
+        errorCode: failure.errorCode,
+        companyName: failure.companyName,
+        authorEmail: failure.authorEmail
+      }));
+
+      if (finalTrackingData.failedMigrations.length > 20) {
+        response.note = `Showing first 20 of ${finalTrackingData.failedMigrations.length} failed entries. Check log files for complete details.`;
+      }
+    }
+
+    // Include sample of successful entries
+    if (finalTrackingData.successfulMigrations.length > 0) {
+      response.sampleSuccessfulEntries = finalTrackingData.successfulMigrations.slice(0, 10).map(success => ({
+        entryId: success.entryId, // Added entry ID
+        sourceActivityId: success.sourceActivityId,
+        targetActivityId: success.targetActivityId,
+        companyName: success.companyName,
+        authorEmail: success.authorEmail
+      }));
+    }
+
+    res.status(200).json(response);
+
+  } catch (error) {
+    console.error("❌ Migration error:", error.message);
+    MigrationTracker.trackError(trackingData, error, 'Main migration process');
+
+    // Finalize tracking even in case of error
+    const finalTrackingData = MigrationTracker.finalizeTracking(trackingData);
+    await MigrationTracker.saveTrackingData(finalTrackingData);
+    MigrationTracker.printConsoleSummary(finalTrackingData);
+
+    res.status(500).json({
+      message: "Error during migration",
+      migrationId: finalTrackingData.migrationId,
+      error: error.message,
+      partialResults: {
+        totalProcessed: finalTrackingData.totalProcessed,
+        successful: finalTrackingData.statistics.successCount,
+        failed: finalTrackingData.statistics.failureCount,
+        duration: finalTrackingData.summary?.migrationOverview?.totalDuration || 'Unknown'
+      },
+      nextSteps: {
+        canRetryFromBatch: Math.floor(finalTrackingData.totalProcessed),
+        recommendRestart: finalTrackingData.statistics.successCount < (finalTrackingData.totalProcessed * 0.5)
+      }
+    });
+  }
+};
 
 
-}
+
