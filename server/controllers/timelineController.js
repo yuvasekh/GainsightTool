@@ -1,5 +1,5 @@
 const axios = require('axios');
-
+let userCookie = ""
 exports.fetchTimeLine = async (req, res) => {
   try {
     const { instanceUrl, instanceToken } = req.body;
@@ -70,8 +70,6 @@ exports.fetchTimeLine = async (req, res) => {
     });
   }
 };
-
-
 exports.CompanyTimeLine = async (req, res) => {
   try {
     // console.log(req.body, "req.body");
@@ -112,9 +110,9 @@ exports.CompanyTimeLine = async (req, res) => {
     });
   }
 };
-
 const fs = require('fs').promises;
 const path = require('path');
+const { chromium } = require('playwright'); // Claude added for playwright functionality
 
 // Migration Tracking and Logging Utility
 const MigrationTracker = {
@@ -248,7 +246,7 @@ const MigrationTracker = {
 
   // Generate detailed summary report
   generateSummary(trackingData) {
-    const successRate = trackingData.totalProcessed > 0 
+    const successRate = trackingData.totalProcessed > 0
       ? ((trackingData.statistics.successCount / trackingData.totalProcessed) * 100).toFixed(2)
       : 0;
 
@@ -299,7 +297,7 @@ const MigrationTracker = {
   // Analyze batch performance
   getFastestBatch(batchTiming) {
     if (batchTiming.length === 0) return null;
-    const fastest = batchTiming.reduce((prev, current) => 
+    const fastest = batchTiming.reduce((prev, current) =>
       (prev.duration < current.duration) ? prev : current
     );
     return {
@@ -311,7 +309,7 @@ const MigrationTracker = {
 
   getSlowestBatch(batchTiming) {
     if (batchTiming.length === 0) return null;
-    const slowest = batchTiming.reduce((prev, current) => 
+    const slowest = batchTiming.reduce((prev, current) =>
       (prev.duration > current.duration) ? prev : current
     );
     return {
@@ -337,7 +335,7 @@ const MigrationTracker = {
     });
 
     const sortedErrors = Object.entries(errorCounts)
-      .sort(([,a], [,b]) => b - a)
+      .sort(([, a], [, b]) => b - a)
       .map(([errorType, count]) => ({ errorType, count }));
 
     return {
@@ -377,7 +375,7 @@ const MigrationTracker = {
   // Print console summary
   printConsoleSummary(trackingData) {
     const summary = trackingData.summary;
-    
+
     console.log('\n' + '='.repeat(80));
     console.log('📊 MIGRATION SUMMARY REPORT');
     console.log('='.repeat(80));
@@ -388,18 +386,17 @@ const MigrationTracker = {
     console.log(`❌ Failed: ${summary.statistics.failedMigrations}`);
     console.log(`📈 Success Rate: ${summary.statistics.successRate}`);
     console.log(`⚡ Average Time per Activity: ${summary.statistics.averageTimePerActivity}`);
-    
+
     if (summary.errorAnalysis.totalErrors > 0) {
       console.log('\n📋 Error Breakdown:');
       summary.errorAnalysis.errorBreakdown.forEach(error => {
         console.log(`  • ${error.errorType}: ${error.count} occurrences`);
       });
     }
-    
+
     console.log('='.repeat(80) + '\n');
   }
 };
-
 // Your existing constants and mappings remain the same
 const ACTIVITY_TYPE_MAPPING = [
   { "Old Verizon Activity Type Name": "3G At-Risk Migration Update", "Activity Type": "Update", "Sub-Activity Type": "" },
@@ -430,7 +427,6 @@ const ACTIVITY_TYPE_MAPPING = [
   { "Old Verizon Activity Type Name": "SSD Close Out", "Activity Type": "Update", "Sub-Activity Type": "SSD Close Out" },
   { "Old Verizon Activity Type Name": "Update", "Activity Type": "Update", "Sub-Activity Type": "" }
 ];
-
 const MILESTONE_TYPE_MAPPING = [
   { "Old Milestone Type": "Adopting", "New Milestone Type": "Adopting" },
   { "Old Milestone Type": "CSM Assigned", "New Milestone Type": "CSM Transition" },
@@ -455,7 +451,6 @@ const MILESTONE_TYPE_MAPPING = [
   { "Old Milestone Type": "Upcoming Renewal", "New Milestone Type": "Lifecycle Event Created" },
   { "Old Milestone Type": "Will Churn", "New Milestone Type": "Will Churn" }
 ];
-
 // Global Cache Variables (keeping your existing structure)
 let userDataCache = null;
 let companyDataCache = null;
@@ -465,6 +460,9 @@ let subActivityTypesCache = null;
 let meetingSubTypesCache = null;
 let sourceMilestoneTypesCache = null;
 let targetMilestoneTypesCache = null;
+
+// Claude added - Cookie cache for playwright integration
+const cookieCache = new Map(); // email -> cookie string
 
 // All your existing functions remain unchanged
 function normalizeString(str) {
@@ -515,16 +513,6 @@ async function readUsersFromFile() {
     return null;
   }
 }
-async function clearUsersCache() {
-  try {
-    await fs.unlink(USERS_JSON_FILE);
-    userDataCache = null;
-    console.log('Users cache cleared');
-  } catch (error) {
-    console.error('Error clearing users cache:', error.message);
-  }
-}
-
 const COMPANIES_JSON_FILE = path.join(__dirname, 'targetcompanies.json');
 
 async function getAllCompanies(instanceUrl, sessionCookie) {
@@ -537,7 +525,7 @@ async function getAllCompanies(instanceUrl, sessionCookie) {
       companyDataCache = companiesFromFile;
       return companiesFromFile;
     }
-  
+
     return companiesFromFile;
 
   } catch (error) {
@@ -562,26 +550,6 @@ async function readCompaniesFromFile() {
   } catch (error) {
     console.error('Error reading companies from file:', error.message);
     return null;
-  }
-}
-
-async function saveCompaniesToFile(companies) {
-  try {
-    const jsonData = JSON.stringify(companies, null, 2);
-    await fs.writeFile(COMPANIES_JSON_FILE, jsonData, 'utf8');
-    console.log(`Successfully saved ${companies.length} companies to ${COMPANIES_JSON_FILE}`);
-  } catch (error) {
-    console.error('Error saving companies to file:', error.message);
-  }
-}
-
-async function clearCompaniesCache() {
-  try {
-    await fs.unlink(COMPANIES_JSON_FILE);
-    companyDataCache = null;
-    console.log('Companies cache cleared');
-  } catch (error) {
-    console.error('Error clearing companies cache:', error.message);
   }
 }
 
@@ -699,7 +667,7 @@ async function getAdvancedActivityMapping(oldActivityTypeName, targetInstanceUrl
 
       if (normalizeString(mapping["Activity Type"]) === "meeting") {
         console.log(`🔍 Looking for meeting sub-type: "${subActivityName}"`);
-       
+
         const meetingSubType = meetingSubTypes.find(type =>
           normalizeString(type.label) === normalizeString(subActivityName)
         );
@@ -712,7 +680,7 @@ async function getAdvancedActivityMapping(oldActivityTypeName, targetInstanceUrl
         }
       } else {
         console.log(`🔍 Looking for sub-activity type: "${subActivityName}"`);
-       
+
         const subActivityType = subActivityTypes.find(type =>
           normalizeString(type.label) === normalizeString(subActivityName)
         );
@@ -846,10 +814,189 @@ async function getMilestoneTypeMapping(oldMilestoneTypeId, sourceInstanceUrl, so
   }
 }
 
+
+// Claude added - Function to get user cookie via playwright
+async function getUserCookieViaPlaywright(targetEmail) {
+  console.log(`🎭 Getting cookie for user: ${targetEmail} via Playwright`);
+  if (typeof userCookie === "object") {
+    return userCookie;
+  }
+
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  try {
+    // Login as admin
+    console.log("🌐 Navigating to login page...");
+    await page.goto("https://vznconnect.gainsightcloud.com");
+
+    await page.waitForSelector('input[name="username"]', { timeout: 30000 });
+    await page.waitForSelector('input[name="password"]', { timeout: 30000 });
+    await page.fill('input[name="username"]', "sugandha.joshi@wigmoreit.com");
+    await page.fill('input[name="password"]', "ToGainSight@14");
+
+    console.log("🔐 Submitting login...");
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: "networkidle" }),
+      page.keyboard.press("Enter"),
+    ]);
+
+    // Navigate to User Management
+    console.log("➡️ Navigating to User Management page...");
+    await page.goto("https://vznconnect.gainsightcloud.com/v1/ui/usermanagement#/users", {
+      waitUntil: "networkidle",
+    });
+
+    // Search for user
+    console.log(`🔍 Searching for user with email: ${targetEmail}`);
+    const searchInput = page.locator('input.px-search.ant-input[placeholder="Name or Email"]');
+    await searchInput.waitFor({ timeout: 10000 });
+    await searchInput.clear();
+    await searchInput.fill(targetEmail);
+    await searchInput.press("Enter");
+    await page.waitForTimeout(2000);
+
+    // Find and click three dots menu
+    const threeDotButton = page.locator('svg[data-icon="more-vertical"]').first();
+    await threeDotButton.waitFor({ timeout: 10000 });
+    await threeDotButton.click();
+    await page.waitForTimeout(1000);
+
+    // Click "Login as User"
+    const loginMenuItem = page.locator('li.ant-menu-item:has-text("Login as User")');
+    await loginMenuItem.waitFor({ timeout: 10000 });
+
+    const pagePromise = context.waitForEvent("page");
+    await loginMenuItem.click();
+    const newPage = await pagePromise;
+
+    // Wait for login to complete
+    await newPage.waitForLoadState("networkidle");
+
+    // Get cookies from the new page
+    const cookies = await newPage.context().cookies();
+    console.log(`📄 Retrieved ${cookies.length} cookies for user: ${targetEmail}`);
+
+    // Format cookies as required (sid="value")
+    const formattedCookies = cookies.map(cookie => `${cookie.name}="${cookie.value}"`).join('; ');
+
+    // Save cookies to file in the format expected
+    const timestamp = Date.now();
+    const cookieFileName = `login_as_user_cookies_${timestamp}.json`;
+    const cookieFilePath = path.join(__dirname, cookieFileName);
+
+    // Convert to the format needed - array of cookie objects
+    const cookieData = cookies.map(cookie => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      expires: cookie.expires,
+      httpOnly: cookie.httpOnly,
+      secure: cookie.secure,
+      sameSite: cookie.sameSite
+    }));
+
+    await fs.writeFile(cookieFilePath, JSON.stringify(cookieData, null, 2));
+    console.log(`💾 Saved cookies to: ${cookieFilePath}`);
+
+    await newPage.close();
+    await browser.close();
+    userCookie = {
+      cookieString: formattedCookies,
+      cookieFile: cookieFilePath,
+      cookies: cookieData
+    };
+    return {
+      cookieString: formattedCookies,
+      cookieFile: cookieFilePath,
+      cookies: cookieData
+    };
+
+  } catch (error) {
+    console.error(`❌ Error getting cookie for ${targetEmail}:`, error.message);
+    await browser.close();
+    throw error;
+  }
+}
+
+// Claude added - Function to get user cookie with cache and retry logic
+async function getUserCookieWithCache(userEmail, targetInstanceUrl) {
+  const maxRetries = 2;
+  let retryCount = 0;
+
+  while (retryCount <= maxRetries) {
+    // Check cache first (but skip cache on retry)
+    if (retryCount === 0 && cookieCache.has(userEmail)) {
+      console.log(`✅ Using cached cookie for: ${userEmail}`);
+      const cachedCookie = cookieCache.get(userEmail);
+
+      // Test cached cookie
+      try {
+        const testResponse = await axios({
+          method: 'get',
+          url: `${targetInstanceUrl}/v1/ant/user/profile`,
+          headers: { 'Cookie': cachedCookie },
+          timeout: 10000
+        });
+
+        if (testResponse.status === 200) {
+          console.log(`✅ Cached cookie verified for: ${userEmail}`);
+          return cachedCookie;
+        }
+      } catch (testError) {
+        console.warn(`⚠️ Cached cookie expired for ${userEmail}, getting fresh one`);
+        cookieCache.delete(userEmail); // Claude added - clear expired cookie from cache
+      }
+    }
+
+    try {
+      // Get fresh cookie via playwright
+      const cookieResult = await getUserCookieViaPlaywright(userEmail);
+      const cookieString = cookieResult.cookieString;
+
+      // Test the cookie by making a simple API call
+      try {
+        const testResponse = await axios({
+          method: 'get',
+          url: `${targetInstanceUrl}/v1/ant/user/profile`,
+          headers: { 'Cookie': cookieString },
+          timeout: 10000
+        });
+
+        if (testResponse.status === 200) {
+          console.log(`✅ Fresh cookie verified for: ${userEmail}`);
+          cookieCache.set(userEmail, cookieString);
+          return cookieString;
+        }
+      } catch (testError) {
+        console.warn(`⚠️ Fresh cookie test failed for ${userEmail}, cookie might be invalid`);
+      }
+
+      // Cache the cookie even if test failed (might work for the actual API call)
+      cookieCache.set(userEmail, cookieString);
+      return cookieString;
+
+    } catch (error) {
+      retryCount++;
+      console.error(`❌ Attempt ${retryCount} failed to get cookie for ${userEmail}:`, error.message);
+
+      if (retryCount > maxRetries) {
+        console.error(`❌ All ${maxRetries + 1} attempts failed to get cookie for ${userEmail}`);
+        throw error;
+      }
+
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+}
+
 async function getUserIdByEmail(email, instanceUrl, sessionCookie) {
   try {
     const users = await getAllTargetUsers(instanceUrl, sessionCookie);
-    
+
     let user = users.find(u => u.Email?.toLowerCase() === email.toLowerCase());
 
     // If not found, fallback to no-reply@gainsightapp.com
@@ -1044,9 +1191,14 @@ async function processTimelineEntry(
   targetCompanyId,
   trackingData
 ) {
+  console.log("yuva");
   const entryStartTime = new Date();
-  
+
   try {
+    // Claude added - Initialize critical variables at the very start to prevent undefined errors
+    let userInfo;
+    let userId = "1P01E316G9DAPFOLE6SOOUG71XRMN5F3PLER"; // Claude added - always start with fallback
+    let userCookie = targetInstanceToken; // Claude added - always start with default token
     console.log('Processing entry:', entry.id || 'unknown');
 
     // Extract activity details for tracking
@@ -1057,17 +1209,40 @@ async function processTimelineEntry(
       subject: entry.note?.subject || null
     };
 
-    // Handle user cache
-    let userInfo;
+    // Handle user cache - Claude modified this section
     const authorEmail = entry.author?.email;
     if (authorEmail) {
       if (userCache[authorEmail]) {
         userInfo = userCache[authorEmail];
+        userId = userInfo; // Claude added - userInfo is already the GSID when cached
       } else {
         userInfo = await getUserIdByEmail(authorEmail, targetInstanceUrl, targetInstanceToken);
-       //pLAYWRIGHT NEED TO write here
-        userCache[authorEmail] = userInfo.GSID;
+        // Claude fixed - handle both object and string returns from getUserIdByEmail
+        if (userInfo && typeof userInfo === 'object' && userInfo.GSID) {
+          userId = userInfo.GSID; // Claude added - extract userId from userInfo object
+          userCache[authorEmail] = userInfo.GSID; // Claude fixed - cache the GSID only
+        } else if (typeof userInfo === 'string') {
+          userId = userInfo; // Claude added - userInfo is already the fallback ID string
+          userCache[authorEmail] = userInfo; // Claude added - cache the fallback ID
+        } else {
+          console.warn(`⚠️ No user found for email: ${authorEmail}`);
+          userId = "1P01E316G9DAPFOLE6SOOUG71XRMN5F3PLER"; // Claude added - fallback user ID
+          userCache[authorEmail] = userId; // Claude added - cache the fallback ID
+        }
       }
+
+      // Claude added - Get user-specific cookie via playwright
+      try {
+        userCookie = await getUserCookieWithCache(authorEmail, targetInstanceUrl);
+        console.log(`🍪 Got cookie for user: ${authorEmail}`);
+      } catch (cookieError) {
+        console.warn(`⚠️ Failed to get cookie for ${authorEmail}, using default token:`, cookieError.message);
+        userCookie = targetInstanceToken; // Claude added - fallback to default token
+      }
+    } else {
+      // Claude added - handle case when no author email
+      userId = "1P01E316G9DAPFOLE6SOOUG71XRMN5F3PLER"; // Claude added - fallback user ID
+      userCookie = targetInstanceToken; // Claude added - use default token when no author
     }
 
     // Handle company cache
@@ -1095,16 +1270,16 @@ async function processTimelineEntry(
 
     if (sourceActivityTypeId) {
       const cacheKey = `advanced_${sourceActivityTypeId}`;
-     
+
       if (activityCache[cacheKey]) {
         activityMapping = activityCache[cacheKey];
       } else {
         const sourceActivityTypes = await getAllActivityTypes(sourceInstanceUrl, sourceInstanceToken, 'source', entry.contexts?.[0]?.id);
         const sourceActivity = sourceActivityTypes.find(type => type.id === sourceActivityTypeId);
-       
+
         if (sourceActivity) {
           console.log(`🔍 Source activity: ${sourceActivity.name} (ID: ${sourceActivityTypeId})`);
-         
+
           activityMapping = await getAdvancedActivityMapping(
             sourceActivity.name,
             targetInstanceUrl,
@@ -1113,7 +1288,7 @@ async function processTimelineEntry(
             sourceInstanceToken,
             targetCompanyId
           );
-         console.log(activityMapping,"activityMapping")
+          console.log(activityMapping, "activityMapping")
           activityCache[cacheKey] = activityMapping;
         } else {
           console.error(`❌ Source activity type not found: ${sourceActivityTypeId}`);
@@ -1127,9 +1302,9 @@ async function processTimelineEntry(
 
     if (oldMilestoneTypeId && normalizeString(activityMapping?.activityTypeName) === 'milestone') {
       console.log(`🏁 MILESTONE DETECTED: Processing milestone type mapping...`);
-     
+
       const milestoneCacheKey = `milestone_${oldMilestoneTypeId}`;
-     
+
       if (milestoneCache[milestoneCacheKey]) {
         milestoneMapping = milestoneCache[milestoneCacheKey];
       } else {
@@ -1142,16 +1317,16 @@ async function processTimelineEntry(
           entry.contexts?.[0]?.id,
           targetCompanyId
         );
-       
+
         milestoneCache[milestoneCacheKey] = milestoneMapping;
-       
+
         if (milestoneMapping) {
           console.log(`✅ Successfully mapped milestone: ${milestoneMapping.mappingRule}`);
         }
       }
     }
 
-    // Process attachments
+    // Claude added - Process attachments AFTER userId is defined
     let processedAttachments = [];
     if (entry.attachments && entry.attachments.length > 0) {
       try {
@@ -1159,7 +1334,7 @@ async function processTimelineEntry(
           entry.attachments,
           companyId,
           companyLabel,
-          userId,
+          userId, // Claude note - userId is now properly defined above
           entry.author?.name,
           entry.author?.email,
           targetInstanceUrl,
@@ -1171,9 +1346,10 @@ async function processTimelineEntry(
       }
     }
 
+    // Claude modified - ensure userId is available for internal attendees
     const ModifiedInternalId = (entry.note?.customFields?.internalAttendees || []).map(att => ({
       ...att,
-      id: userId,
+      id: userId, // Claude note - userId should be defined by this point
       name: att.name,
       email: att.email,
       userType: "USER"
@@ -1195,13 +1371,12 @@ async function processTimelineEntry(
       customFields.milestoneType = milestoneMapping.newMilestoneTypeId;
       console.log(`✅ Added milestone type: ${milestoneMapping.newMilestoneTypeId} (${milestoneMapping.mappingRule})`);
     }
-     customFields.Ant__externalid__c = entry.id;
-     let externalSourceDetails={}
-     //Need to  verify
-if(entry?.meta?.externalSourceDetails?.externalSystems.length>0)
-{
-externalSourceDetails={externalSystems:entry?.meta?.externalSourceDetails?.externalSystems}
-}
+    customFields.Ant__externalid__c = entry.id;
+    let externalSourceDetails = {}
+    //Need to  verify
+    if (entry?.meta?.externalSourceDetails?.externalSystems.length > 0) {
+      externalSourceDetails = { externalSystems: entry?.meta?.externalSourceDetails?.externalSystems }
+    }
     const draftPayload = {
       lastModifiedByUser: {
         gsId: userId,
@@ -1222,7 +1397,7 @@ externalSourceDetails={externalSystems:entry?.meta?.externalSourceDetails?.exter
       mentions: [],
       relatedRecords: null,
       meta: {
-        externalSourceDetails:externalSourceDetails,
+        externalSourceDetails: externalSourceDetails,
         activityTypeId: activityMapping?.activityTypeId,
         ctaId: null,
         source: "GLOBAL_TIMELINE",
@@ -1232,7 +1407,7 @@ externalSourceDetails={externalSystems:entry?.meta?.externalSourceDetails?.exter
         notesTemplateId: null
       },
       author: {
-        id: '1P010RM8DTS76UHHN4XY38M7XP5JT5JZS7IV',
+        id: userId, // Claude modified - use dynamic userId instead of hardcoded value
         obj: "User",
         name: entry.author?.name,
         email: entry.author?.email,
@@ -1261,9 +1436,9 @@ externalSourceDetails={externalSystems:entry?.meta?.externalSourceDetails?.exter
       ]
     };
 
-    console.log(JSON.stringify(draftPayload),"draftPayload")
+    console.log(JSON.stringify(draftPayload), "draftPayload")
 
-    const draftId = await createDraft(draftPayload, targetInstanceUrl, targetInstanceToken);
+    const draftId = await createDraft(draftPayload, targetInstanceUrl, userCookie); // Claude modified - use user-specific cookie
     if (!draftId) {
       MigrationTracker.trackFailure(trackingData, entry.id, 'Draft creation failed', activityDetails);
       return { success: false, reason: 'Draft creation failed', entryId: entry.id };
@@ -1276,7 +1451,7 @@ externalSourceDetails={externalSystems:entry?.meta?.externalSourceDetails?.exter
       url: `${targetInstanceUrl}/v1/ant/v2/activity`,
       headers: {
         'Content-Type': 'application/json',
-        'Cookie': targetInstanceToken
+        'Cookie': userCookie // Claude modified - use user-specific cookie instead of targetInstanceToken
       },
       data: JSON.stringify(timelinePayload),
       maxBodyLength: Infinity
@@ -1284,17 +1459,17 @@ externalSourceDetails={externalSystems:entry?.meta?.externalSourceDetails?.exter
 
     const final = await axios(postConfig);
     console.log(final.data, "timelinePostResult");
-    
+
     // Track successful migration
     const targetActivityId = final.data?.data?.id || draftId;
     MigrationTracker.trackSuccess(trackingData, entry.id, targetActivityId, activityDetails);
-    
+
     return { success: true, entryId: entry.id, targetId: targetActivityId };
 
   } catch (error) {
     console.error('Error processing timeline entry:', error.message);
     MigrationTracker.trackError(trackingData, error, `Processing entry ${entry.id}`);
-    
+
     // Extract activity details for failure tracking
     const activityDetails = {
       activityType: entry?.meta?.activityTypeId || null,
@@ -1302,7 +1477,7 @@ externalSourceDetails={externalSystems:entry?.meta?.externalSourceDetails?.exter
       authorEmail: entry.author?.email || null,
       subject: entry.note?.subject || null
     };
-    
+
     MigrationTracker.trackFailure(trackingData, entry.id, error.message, activityDetails);
     return { success: false, reason: error.message, entryId: entry.id };
   }
@@ -1310,15 +1485,15 @@ externalSourceDetails={externalSystems:entry?.meta?.externalSourceDetails?.exter
 
 // Enhanced batch processing function with tracking
 async function processBatch(
-  batch, 
-  userCache, 
-  companyCache, 
+  batch,
+  userCache,
+  companyCache,
   activityCache,
-  milestoneCache, 
-  targetInstanceUrl, 
-  targetInstanceToken, 
-  sourceInstanceUrl, 
-  sourceInstanceToken, 
+  milestoneCache,
+  targetInstanceUrl,
+  targetInstanceToken,
+  sourceInstanceUrl,
+  sourceInstanceToken,
   sourceCompanyId,
   targetCompanyId,
   trackingData,
@@ -1348,9 +1523,9 @@ async function processBatch(
         targetCompanyId,
         trackingData
       );
-      
+
       results.push(result);
-      
+
       if (result.success) {
         batchSuccessCount++;
       } else {
@@ -1364,7 +1539,7 @@ async function processBatch(
       console.log(error)
       console.error(`Failed to process entry ${entry.id}:`, error.message);
       MigrationTracker.trackError(trackingData, error, `Batch ${batchIndex + 1} - Entry ${entry.id}`);
-      
+
       const failureResult = {
         success: false,
         reason: error.message,
@@ -1376,15 +1551,15 @@ async function processBatch(
   }
 
   const batchEndTime = new Date();
-  
+
   // Track batch timing
   MigrationTracker.trackBatchTiming(
-    trackingData, 
-    batchIndex, 
-    batch.length, 
-    batchStartTime, 
-    batchEndTime, 
-    batchSuccessCount, 
+    trackingData,
+    batchIndex,
+    batch.length,
+    batchStartTime,
+    batchEndTime,
+    batchSuccessCount,
     batchFailureCount
   );
 
@@ -1398,7 +1573,7 @@ exports.migrateTimelines = async (req, res) => {
   // Initialize tracking
   const trackingData = MigrationTracker.initializeTracking();
   try {
-    const { sourceInstanceUrl, sourceInstanceToken, targetInstanceUrl, targetInstanceToken, maxActivities = 45000 } = req.body;
+    const { sourceInstanceUrl, sourceInstanceToken, targetInstanceUrl, targetInstanceToken, maxActivities = 7 } = req.body;
 
     if (!sourceInstanceUrl || !sourceInstanceToken || !targetInstanceUrl || !targetInstanceToken) {
       MigrationTracker.trackError(trackingData, new Error('Missing instance information'), 'Initialization');
@@ -1407,92 +1582,22 @@ exports.migrateTimelines = async (req, res) => {
 
     console.log(`🎯 Starting timeline migration with ID: ${trackingData.migrationId}`);
     console.log(`📊 Target: ${maxActivities} activities`);
-
-    let allContent = [];
     let page = 0;
     const PAGE_SIZE = 100; // Increased from 7 to 100 for better efficiency
     let totalFetched = 0;
 
     // Fetch all timelines with optimized pagination
     console.log('📥 Fetching timeline data...');
-    
-    while (totalFetched < maxActivities) {
-      try {
-        const remainingToFetch = maxActivities - totalFetched;
-        const currentPageSize = Math.min(PAGE_SIZE, remainingToFetch);
-      
-        const url = `${sourceInstanceUrl}/v1/ant/timeline/search/activity?page=${page}&size=${currentPageSize}`;
-        const payload = {
-          quickSearch: {},
-          contextFilter: {},
-          filterContext: "GLOBAL_TIMELINE"
-        };
 
-        const config = {
-          method: 'post',
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            'Cookie': sourceInstanceToken
-          },
-          data: JSON.stringify(payload),
-          maxBodyLength: Infinity,
-          timeout: 60000 // Increased timeout for larger pages
-        };
-
-        const response = await axios(config);
-        const content = response?.data?.data?.content || [];
-
-        if (content.length === 0) {
-          console.log('📄 No more content available, stopping fetch');
-          break;
-        }
-
-        allContent = [...allContent, ...content];
-        totalFetched += content.length;
-
-        const totalPages = response?.data?.data?.page?.totalPages;
-        const currentPage = response?.data?.data?.page?.number;
-
-        console.log(`📄 Fetched page ${currentPage + 1}/${totalPages}, items: ${content.length}, total: ${totalFetched}/${maxActivities}`);
-
-        // Stop if we've reached our target
-        if (totalFetched >= maxActivities) {
-          console.log(`🎯 Reached target of ${maxActivities} activities`);
-          break;
-        }
-
-        page++;
-        
-        // Reduced delay for faster fetching
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-      } catch (error) {
-        console.error(`❌ Error fetching page ${page}:`, error.message);
-        MigrationTracker.trackError(trackingData, error, `Fetching page ${page}`);
-        
-        // If we have some content, continue with what we have
-        if (allContent.length > 0) {
-          console.log(`⚠️ Continuing with ${allContent.length} activities already fetched`);
-          break;
-        } else {
-          throw error; // If no content fetched, fail the migration
-        }
-      }
-    }
-
-    // Trim to exact count if we over-fetched
-    if (allContent.length > maxActivities) {
-      allContent = allContent.slice(0, maxActivities);
-    }
-
+    let email = "eoin.mcmahon@verizonconnect.com"
+    let allContent = await fetchTimeLinesByEmail(sourceInstanceUrl, sourceInstanceToken, email);
     trackingData.statistics.totalCount = allContent.length;
     console.log(`📊 Total timeline entries to migrate: ${allContent.length}`);
 
     if (allContent.length === 0) {
       const finalTracking = MigrationTracker.finalizeTracking(trackingData);
       await MigrationTracker.saveTrackingData(finalTracking);
-      
+
       return res.status(200).json({
         message: "No timeline entries found to migrate",
         migrationId: trackingData.migrationId,
@@ -1505,24 +1610,24 @@ exports.migrateTimelines = async (req, res) => {
     // Pre-load all reference data
     console.log('🔄 Pre-loading reference data...');
     let sourceCompanyId, targetCompanyId;
-    
+
     try {
       const [sourceCompanies, targetCompanies] = await Promise.all([
         getAllCompanies(sourceInstanceUrl, sourceInstanceToken),
         getAllCompanies(targetInstanceUrl, targetInstanceToken)
       ]);
 
-      sourceCompanyId = sourceCompanies?.[0]?.Gsid;
-      targetCompanyId = targetCompanies?.[0]?.Gsid;
+      sourceCompanyId = sourceCompanies?.[0]?.GSID;
+      targetCompanyId = targetCompanies?.[0]?.GSID;
 
       if (!sourceCompanyId || !targetCompanyId) {
         const error = new Error("Could not get company IDs for API calls");
         MigrationTracker.trackError(trackingData, error, 'Reference data loading');
-        
+
         const finalTracking = MigrationTracker.finalizeTracking(trackingData);
         await MigrationTracker.saveTrackingData(finalTracking);
-        
-        return res.status(500).json({ 
+
+        return res.status(500).json({
           message: "Could not get company IDs for API calls",
           migrationId: trackingData.migrationId
         });
@@ -1533,10 +1638,10 @@ exports.migrateTimelines = async (req, res) => {
     } catch (error) {
       console.error('❌ Error pre-loading reference data:', error.message);
       MigrationTracker.trackError(trackingData, error, 'Reference data loading');
-      
+
       const finalTracking = MigrationTracker.finalizeTracking(trackingData);
       await MigrationTracker.saveTrackingData(finalTracking);
-      
+
       return res.status(500).json({
         message: "Failed to load reference data",
         migrationId: trackingData.migrationId,
@@ -1549,7 +1654,7 @@ exports.migrateTimelines = async (req, res) => {
     const companyCache = new Map();
     const activityCache = new Map();
     const milestoneCache = new Map();
-    
+
     // Optimized batch processing for large datasets
     const BATCH_SIZE = 20; // Increased from 3 to 20 for better throughput
     const batches = [];
@@ -1563,10 +1668,10 @@ exports.migrateTimelines = async (req, res) => {
 
     // Process batches with progress reporting
     const progressReportInterval = Math.max(1, Math.floor(batches.length / 20)); // Report every 5%
-    
+
     for (const [batchIndex, batch] of batches.entries()) {
       const isProgressReport = (batchIndex + 1) % progressReportInterval === 0 || batchIndex === batches.length - 1;
-      
+
       if (isProgressReport) {
         const progress = ((batchIndex + 1) / batches.length * 100).toFixed(1);
         console.log(`🔄 Processing batch ${batchIndex + 1}/${batches.length} (${progress}%)...`);
@@ -1594,7 +1699,7 @@ exports.migrateTimelines = async (req, res) => {
           const processed = trackingData.statistics.successCount + trackingData.statistics.failureCount;
           const successRate = processed > 0 ? ((trackingData.statistics.successCount / processed) * 100).toFixed(1) : 0;
           console.log(`✅ Progress: ${processed}/${allContent.length} (${successRate}% success rate)`);
-          
+
           // Memory management - clear caches periodically
           if ((batchIndex + 1) % 100 === 0) {
             console.log('🧹 Clearing caches to manage memory...');
@@ -1613,7 +1718,7 @@ exports.migrateTimelines = async (req, res) => {
       } catch (error) {
         console.error(`❌ Error processing batch ${batchIndex + 1}:`, error.message);
         MigrationTracker.trackError(trackingData, error, `Batch ${batchIndex + 1} processing`);
-        
+
         // Mark all items in this batch as failed
         batch.forEach((entry) => {
           MigrationTracker.trackFailure(trackingData, entry.id, `Batch processing error: ${error.message}`, {
@@ -1634,10 +1739,10 @@ exports.migrateTimelines = async (req, res) => {
 
     // Finalize tracking and generate summary
     const finalTrackingData = MigrationTracker.finalizeTracking(trackingData);
-    
+
     // Save tracking data to files
     const savedFiles = await MigrationTracker.saveTrackingData(finalTrackingData);
-    
+
     // Print console summary
     MigrationTracker.printConsoleSummary(finalTrackingData);
 
@@ -1676,7 +1781,7 @@ exports.migrateTimelines = async (req, res) => {
         companyName: failure.companyName,
         authorEmail: failure.authorEmail
       }));
-      
+
       if (finalTrackingData.failedMigrations.length > 20) {
         response.note = `Showing first 20 of ${finalTrackingData.failedMigrations.length} failed entries. Check log files for complete details.`;
       }
@@ -1687,7 +1792,7 @@ exports.migrateTimelines = async (req, res) => {
   } catch (error) {
     console.error("❌ Migration error:", error.message);
     MigrationTracker.trackError(trackingData, error, 'Main migration process');
-    
+
     // Finalize tracking even in case of error
     const finalTrackingData = MigrationTracker.finalizeTracking(trackingData);
     await MigrationTracker.saveTrackingData(finalTrackingData);
@@ -1704,9 +1809,130 @@ exports.migrateTimelines = async (req, res) => {
         duration: finalTrackingData.summary?.migrationOverview?.totalDuration || 'Unknown'
       },
       nextSteps: {
-        canRetryFromBatch: Math.floor(finalTrackingData.totalProcessed / BATCH_SIZE),
+        canRetryFromBatch: Math.floor(finalTrackingData.totalProcessed),
         recommendRestart: finalTrackingData.statistics.successCount < (finalTrackingData.totalProcessed * 0.5)
       }
     });
   }
 };
+
+
+async function fetchTimeLinesByEmail(baseUrl, cookieHeader, email) {
+  console.log(baseUrl, "baseUrl")
+  const headers = {
+    'Cookie': cookieHeader,
+    'Content-Type': 'application/json'
+  };
+  console.log(headers, "yuva")
+  let page = 0;
+  let totalPages = 1;
+  const allData = [];
+  const pageSize = 2000;
+  const requestBody = {
+    searchText: "",
+    quickSearch: {},
+    filter: {
+      advancedFilter: [
+        {
+          leftOperand: {
+            type: "BASE_FIELD",
+            fieldName: "Email",
+            key: "AuthorId_Email",
+            dbName: "gsd41894",
+            dataType: "EMAIL",
+            label: "Email",
+            objectName: "gsuser",
+            objectDBName: "user_75aab2e476cc42b8ac9aa3191bbeb0fd",
+            objectLabel: "User",
+            objectId: "75aab2e4-76cc-42b8-ac9a-a3191bbeb0fd",
+            fieldPath: {
+              lookupId: "AuthorId__gr",
+              lookupName: "AuthorId__gr",
+              legacyLookupId: "d8f7413d-8ea4-4494-a2cf-1a4cc6a51b58",
+              left: {
+                type: "BASE_FIELD",
+                fieldName: "Gsid",
+                fieldLabel: "GSID",
+                label: "GSID",
+                dbName: "gsid",
+                objectName: "gsuser",
+                objectDBName: "user_75aab2e476cc42b8ac9aa3191bbeb0fd",
+                hasLookup: false,
+                displayOrder: 0
+              },
+              right: {
+                type: "BASE_FIELD",
+                fieldName: "AuthorId",
+                fieldLabel: "Author Id",
+                label: "Author Id",
+                dbName: "gs_authorId",
+                objectName: "activity_timeline",
+                objectDBName: "antv2_activity_view_a87ad17fcaf840018ef9342cb02d7d75",
+                hasLookup: false,
+                displayOrder: 0
+              },
+              fieldPath: null
+            },
+            properties: {
+              autoSuggestDetails: {
+                object: "gsuser",
+                searchOn: ["Email", "Gsid"],
+                dataStore: "HAPOSTGRES",
+                columnsToList: ["Email"],
+                connectionType: "MDA",
+                connectionId: "MDA",
+                targetFieldName: "Email"
+              },
+              sourceType: "EMAIL",
+              actualDataEditability: {
+                accessible: true,
+                createable: true,
+                updateable: true
+              },
+              SEARCH_CONTROLLER: "AUTO_SUGGEST",
+              pathLabel: "Author Id → Email"
+            }
+          },
+          filterAlias: "A",
+          comparisonOperator: "EQ",
+          rightOperandType: "VALUE",
+          filterValue: {
+            value: [email],
+            userLiteral: "OTHER_USER"
+          }
+        }
+      ],
+      expression: "A",
+      dateFilter: null,
+      activityTypes: null
+    },
+    contextFilter: {},
+    filterContext: "GLOBAL_TIMELINE"
+  };
+  while (page < totalPages) {
+    const url = `${baseUrl}/v1/ant/timeline/search/activity?page=${page}&size=${pageSize}`;
+
+    console.log(`⏳ Fetching page ${page + 1}...`);
+
+    try {
+      const response = await axios.post(url, requestBody, { headers });
+      console.log(response.data)
+      const result = response.data.data;
+      // console.log(result.data.data,"yuva99")
+      allData.push(...(result.content || []));
+      totalPages = result.page.totalPages;
+      page++;
+    } catch (err) {
+      console.error(`❌ Failed on page ${page + 1}:`, err.response?.data || err.message);
+      break;
+    }
+  }
+  console.log(`\n✅ All pages fetched.`);
+  console.log(`📝 Total activities: ${allData.length}`);
+  // console.log(`📁 Saved to: ${outputPath}`);
+  return allData
+  // const outputPath = path.join(__dirname, 'all_timeline_data.json');
+  // fs.writeFileSync(outputPath, JSON.stringify(allData, null, 2));
+
+
+}
