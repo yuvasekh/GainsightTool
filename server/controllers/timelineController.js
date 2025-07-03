@@ -2,7 +2,7 @@ const axios = require('axios');
 let userCookie = ""
 exports.fetchTimeLine = async (req, res) => {
   try {
-    const { instanceUrl, instanceToken } = req.body;
+    const { instanceUrl, instanceToken, targetInstanceUrl, targetInstanceToken } = req.body;
 
     if (!instanceUrl || !instanceToken) {
       return res.status(400).json({ message: "Missing instance information" });
@@ -41,6 +41,31 @@ exports.fetchTimeLine = async (req, res) => {
       const currentPage = response?.data?.data?.page?.number;
 
       if (content.length === 0 || currentPage + 1 >= totalPages) {
+        // Claude edited - Map company IDs for navigation links if target system info is provided
+        if (targetInstanceUrl && targetInstanceToken && allContent.length > 0) {
+          console.log("🔍 Claude edited - Starting company ID mapping for fetchTimeLine");
+          // Process each timeline item to map company IDs
+          for (let item of allContent) {
+            if (item.contexts && item.contexts.length > 0) {
+              for (let context of item.contexts) {
+                if (context.obj === 'Company' && context.lbl) {
+                  console.log(`🔍 Claude edited - Original company: ${context.lbl}, Original ID: ${context.id}`);
+                  // Map company name to target system company ID
+                  const targetCompanyId = await getCompanyIdByName(context.lbl, targetInstanceUrl, targetInstanceToken);
+                  if (targetCompanyId) {
+                    console.log(`✅ Claude edited - Mapped ${context.lbl} from ${context.id} to ${targetCompanyId}`);
+                    context.id = targetCompanyId; // Replace with target company ID
+                  } else {
+                    console.log(`❌ Claude edited - Could not map company: ${context.lbl}`);
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          console.log("⚠️ Claude edited - No target system info provided for company ID mapping");
+        }
+
         // Last page reached
         const fullResponse = {
           ...response.data,
@@ -54,7 +79,7 @@ exports.fetchTimeLine = async (req, res) => {
               size: allContent.length,
               totalElements: allContent.length
             }
-          }
+          },
         };
         return res.json(fullResponse);
       }
@@ -73,7 +98,7 @@ exports.fetchTimeLine = async (req, res) => {
 exports.CompanyTimeLine = async (req, res) => {
   try {
     // console.log(req.body, "req.body");
-    const { instanceUrl, instanceToken, companyId, page = 0, size = 20 } = req.body;
+    const { instanceUrl, instanceToken, companyId, page = 0, size = 20, targetInstanceUrl, targetInstanceToken } = req.body;
 
     if (!instanceUrl || !instanceToken || !companyId) {
       return res.status(400).json({ message: "Missing instance information" });
@@ -100,7 +125,33 @@ exports.CompanyTimeLine = async (req, res) => {
 
     const response = await axios(config);
 
-    // Optional: derive company name if needed here
+    // Claude edited - Map company IDs for navigation links if target system info is provided
+    if (targetInstanceUrl && targetInstanceToken && response.data?.data?.content) {
+      console.log("🔍 Claude edited - Starting company ID mapping for CompanyTimeLine");
+      const content = response.data.data.content;
+      
+      // Process each timeline item to map company IDs
+      for (let item of content) {
+        if (item.contexts && item.contexts.length > 0) {
+          for (let context of item.contexts) {
+            if (context.obj === 'Company' && context.lbl) {
+              console.log(`🔍 Claude edited - Original company: ${context.lbl}, Original ID: ${context.id}`);
+              // Map company name to target system company ID
+              const targetCompanyId = await getCompanyIdByName(context.lbl, targetInstanceUrl, targetInstanceToken);
+              if (targetCompanyId) {
+                console.log(`✅ Claude edited - Mapped ${context.lbl} from ${context.id} to ${targetCompanyId}`);
+                context.id = targetCompanyId; // Replace with target company ID
+              } else {
+                console.log(`❌ Claude edited - Could not map company: ${context.lbl}`);
+              }
+            }
+          }
+        }
+      }
+    } else {
+      console.log("⚠️ Claude edited - No target system info provided for company ID mapping in CompanyTimeLine");
+    }
+
     res.json(response.data);
   } catch (error) {
     console.error("Error fetching timeline:", error.message);
@@ -521,6 +572,48 @@ let targetMilestoneTypesCache = null;
 
 // Claude added - Cookie cache for playwright integration
 const cookieCache = new Map(); // email -> cookie string
+
+// Claude added - Function to fetch Gong audio data
+async function fetchGongAudio(eid, sourceInstanceUrl, sourceInstanceToken, targetActivityId) {
+  console.log(`🎵 Fetching Gong audio for eid: ${eid}, targetActivityId: ${targetActivityId}`);
+  
+  try {
+    // Construct the Gong API URL with the target activity ID
+    const gongApiUrl = `${sourceInstanceUrl}/v1/ant/gongio/activity/${targetActivityId}/${eid}`;
+    
+    console.log(`📡 Calling Gong API: ${gongApiUrl}`);
+    
+    const config = {
+      method: 'GET',
+      url: gongApiUrl,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': sourceInstanceToken
+      }
+    };
+    
+    const response = await axios(config);
+    
+    if (response.data && response.data.result && response.data.data) {
+      const audioData = response.data.data;
+      console.log(`✅ Successfully fetched Gong audio data for eid: ${eid}`);
+      
+      return {
+        audioUrl: audioData.media?.audioUrl || null,
+        callUrl: audioData.callUrl || null,
+        callId: audioData.callId || null,
+        activityId: audioData.activityId || targetActivityId
+      };
+    } else {
+      console.warn(`⚠️ No audio data found for eid: ${eid}`);
+      return null;
+    }
+    
+  } catch (error) {
+    console.error(`❌ Error fetching Gong audio for eid ${eid}:`, error.message);
+    throw error;
+  }
+}
 
 // Function to read emails from JSON file
 async function readEmailsFromFile() {
@@ -1261,6 +1354,71 @@ async function createDraft(draftPayload, targetInstanceUrl, targetInstanceToken)
   }
 }
 
+// Claude added - Load external attendees mapping data
+let externalAttendeesData = null;
+
+// Claude added - Function to load external attendees data
+async function loadExternalAttendeesData() {
+  try {
+    if (!externalAttendeesData) {
+      const data = await fs.readFile('/Users/ramprasadsomaraju/Desktop/GS Migration/GainsightTool-dev2/externalAttendees.json', 'utf8');
+      externalAttendeesData = JSON.parse(data);
+      console.log(`✅ Loaded ${externalAttendeesData.length} external attendees records`);
+    }
+    return externalAttendeesData;
+  } catch (error) {
+    console.error('❌ Failed to load external attendees data:', error.message);
+    return [];
+  }
+}
+
+// Claude added - Function to map external attendees from source to target
+async function mapExternalAttendees(sourceExternalAttendees, targetCompanyId) {
+  if (!sourceExternalAttendees || !Array.isArray(sourceExternalAttendees) || sourceExternalAttendees.length === 0) {
+    return [];
+  }
+
+  const externalData = await loadExternalAttendeesData();
+  const mappedAttendees = [];
+
+  for (const sourceAttendee of sourceExternalAttendees) {
+    const attendeeEmail = sourceAttendee.email;
+    
+    if (!attendeeEmail) {
+      console.warn('⚠️ External attendee missing email, skipping');
+      continue;
+    }
+
+    // Find matching attendee in external data by email
+    const matchingAttendee = externalData.find(extAttendee => 
+      extAttendee.email && extAttendee.email.toLowerCase() === attendeeEmail.toLowerCase()
+    );
+
+    if (matchingAttendee) {
+      // Map the external attendee to target format
+      const mappedAttendee = {
+        companyId: targetCompanyId, // Use target company ID
+        email: attendeeEmail,
+        epp: null,
+        esys: null,
+        id: matchingAttendee.company_person_gsid, // Map to company_person_gsid
+        name: matchingAttendee.name || sourceAttendee.name || '', // Use name from mapping or source
+        personId: matchingAttendee.person_id, // Map to person_id
+        pp: null,
+        type: sourceAttendee.type || "Contact"
+      };
+      
+      mappedAttendees.push(mappedAttendee);
+      console.log(`✅ Mapped external attendee: ${attendeeEmail} -> ${matchingAttendee.company_person_gsid}`);
+    } else {
+      console.warn(`⚠️ External attendee not found in mapping data: ${attendeeEmail}`);
+      // Skip attendees that don't exist in target instance
+    }
+  }
+
+  return mappedAttendees;
+}
+
 // Enhanced processTimelineEntry with tracking integration
 async function processTimelineEntry(
   entry,
@@ -1411,6 +1569,10 @@ async function processTimelineEntry(
       }
     }
 
+    // Claude added - Store Gong info for later processing (after target activity ID is available)
+    let isGongActivity = entry?.meta?.source === "GONG_IO" && entry?.meta?.eid;
+    let gongEid = entry?.meta?.eid;
+
     // Claude added - Process attachments AFTER userId is defined
     let processedAttachments = [];
     if (entry.attachments && entry.attachments.length > 0) {
@@ -1440,10 +1602,16 @@ async function processTimelineEntry(
       userType: "USER"
     }));
 
+    // Claude added - Map external attendees from source to target
+    const mappedExternalAttendees = await mapExternalAttendees(
+      entry.note?.customFields?.externalAttendees,
+      targetCompanyId
+    );
+
     // Build custom fields
     const customFields = {
       internalAttendees: ModifiedInternalId,
-      externalAttendees: []
+      externalAttendees: mappedExternalAttendees // Claude modified - use mapped external attendees
     };
 
     if (activityMapping?.subActivityTypeId) {
@@ -1456,7 +1624,7 @@ async function processTimelineEntry(
       customFields.milestoneType = milestoneMapping.newMilestoneTypeId;
       console.log(`✅ Added milestone type: ${milestoneMapping.newMilestoneTypeId} (${milestoneMapping.mappingRule})`);
     }
-    customFields.Ant__externalid__c = entry.id;
+    customFields.Ant__ExternalId__c = entry.id;
     let externalSourceDetails = {}
     //Need to  verify
     if (entry?.meta?.externalSourceDetails?.externalSystems.length > 0) {
@@ -1485,11 +1653,13 @@ async function processTimelineEntry(
         externalSourceDetails: externalSourceDetails,
         activityTypeId: activityMapping?.activityTypeId,
         ctaId: null,
-        source: "GLOBAL_TIMELINE",
+        source: entry?.meta?.source === "GONG_IO" ? "GONG_IO" : "GLOBAL_TIMELINE",
         hasTask: false,
         emailSent: false,
         systemType: "GAINSIGHT",
-        notesTemplateId: null
+        notesTemplateId: null,
+        // Claude added - Include Gong eid for later audio processing
+        ...(isGongActivity && { eid: gongEid })
       },
       author: {
         id: userId, // Claude modified - use dynamic userId instead of hardcoded value
@@ -1547,6 +1717,48 @@ async function processTimelineEntry(
 
     // Track successful migration
     const targetActivityId = final.data?.data?.id || draftId;
+    
+    // Claude added - Process Gong audio after successful timeline creation
+    if (isGongActivity && gongEid && targetActivityId) {
+      console.log(`🎵 Processing Gong audio for entry ${entry.id}, eid: ${gongEid}, targetActivityId: ${targetActivityId}`);
+      try {
+        const gongAudioData = await fetchGongAudio(gongEid, sourceInstanceUrl, sourceInstanceToken, targetActivityId);
+        if (gongAudioData) {
+          console.log(`✅ Successfully fetched Gong audio data for entry ${entry.id}`);
+          
+          // Update the timeline entry with Gong audio data
+          const updatePayload = {
+            ...timelinePayload,
+            meta: {
+              ...timelinePayload.meta,
+              audioUrl: gongAudioData.audioUrl,
+              callUrl: gongAudioData.callUrl,
+              callId: gongAudioData.callId
+            }
+          };
+          
+          // Update the timeline entry with audio data
+          const updateConfig = {
+            method: 'put',
+            url: `${targetInstanceUrl}/v1/ant/v2/activity/${targetActivityId}`,
+            headers: {
+              'Content-Type': 'application/json',
+              'Cookie': userCookie
+            },
+            data: JSON.stringify(updatePayload),
+            maxBodyLength: Infinity
+          };
+          
+          await axios(updateConfig);
+          console.log(`✅ Updated timeline entry ${targetActivityId} with Gong audio data`);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to process Gong audio for entry ${entry.id}:`, error.message);
+        MigrationTracker.trackError(trackingData, error, `Gong audio processing for entry ${entry.id}`);
+        // Don't fail the entire migration for Gong audio issues
+      }
+    }
+
     MigrationTracker.trackSuccess(trackingData, entry.id, targetActivityId, activityDetails);
 
     return { success: true, entryId: entry.id, targetId: targetActivityId };
@@ -2107,7 +2319,7 @@ exports.migrateTimelines = async (req, res) => {
 
     // Read emails from JSON file
     console.log('📧 Reading emails from configuration file...');
-    const emails = ["eoin.mcmahon@verizonconnect.com", "jihyun.kim.schreiber@verizonconnect.com"]
+    const emails = ["aliyah.weems@verizonconnect.com"]
     console.log(`📝 Found ${emails.length} emails to process: ${emails.join(', ')}`);
 
     // Claude edited - Initialize caches at the top before processing
@@ -2167,7 +2379,6 @@ exports.migrateTimelines = async (req, res) => {
 
     // Process each email individually - fetch, process, then move to next
     for (var i = 0; i < emails.length; i++) {
-      userCookie=""
       const email = emails[i];
       console.log(`\n📧 Processing email ${i + 1}/${emails.length}: ${email}`);
       
